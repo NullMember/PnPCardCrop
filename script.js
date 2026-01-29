@@ -254,10 +254,10 @@ cropForm.addEventListener('submit', async (event) => {
         };
         await pdfPage.render(renderContext).promise;
 
-        for (let row = 0; row < rows; row++) {
+        for (let row = rows - 1; row >= 0; row--) {
             for (let col = 0; col < columns; col++) {
                 const x0 = leftMargin + col * (cardWidth + columnMargin);
-                const y0 = height - topMargin - (row + 1) * (cardHeight + rowMargin);
+                const y0 = topMargin + row * (cardHeight + rowMargin);
 
                 // Create a canvas for the card at the specified DPI
                 const canvas = document.createElement('canvas');
@@ -267,12 +267,13 @@ cropForm.addEventListener('submit', async (event) => {
 
                 // Calculate scaled coordinates based on pdf.js render scale
                 // Note: PDF coordinates have origin at bottom-left, canvas has origin at top-left
-                const scaleRatio = viewport.width / width;
-                const scaledX = x0 * scaleRatio;
-                const scaledWidth = cardWidth * scaleRatio;
-                const scaledHeight = cardHeight * scaleRatio;
+                const scaleRatioX = viewport.width / width;
+                const scaleRatioY = viewport.height / height;
+                const scaledX = x0 * scaleRatioX;
+                const scaledWidth = cardWidth * scaleRatioX;
+                const scaledHeight = cardHeight * scaleRatioY;
                 // Invert Y coordinate: canvas Y = viewport.height - (PDF y + height)
-                const scaledY = viewport.height - (y0 + cardHeight) * scaleRatio;
+                const scaledY = viewport.height - (y0 + cardHeight) * scaleRatioY;
 
                 // Copy the cropped region to the card canvas
                 ctx.drawImage(pageCanvas, scaledX, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
@@ -293,7 +294,7 @@ cropForm.addEventListener('submit', async (event) => {
                     cardCount++;
                 }
                 else if (isDuplex) {
-                    if (currentPage % 2 === 0) {
+                    if (pageIndex % 2 === 0) {
                         const currentFrontCount = frontCardCount;
                         pageRenderPromises.push(
                             new Promise(resolve => {
@@ -307,7 +308,7 @@ cropForm.addEventListener('submit', async (event) => {
                     }
                     else {
                         const x0Back = leftMargin + ((columns - 1) - col) * (cardWidth + columnMargin);
-                        const scaledXBack = x0Back * scaleRatio;
+                        const scaledXBack = x0Back * scaleRatioX;
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
                         const currentBackCount = backCardCount;
@@ -323,7 +324,7 @@ cropForm.addEventListener('submit', async (event) => {
                     }
                 }
                 else if (isDuplexShort) {
-                    if (currentPage % 2 === 0) {
+                    if (pageIndex % 2 === 0) {
                         const currentFrontCount = frontCardCount;
                         pageRenderPromises.push(
                             new Promise(resolve => {
@@ -337,7 +338,7 @@ cropForm.addEventListener('submit', async (event) => {
                     }
                     else {
                         const x0Back = leftMargin + ((columns - 1) - col) * (cardWidth + columnMargin);
-                        const scaledXBack = x0Back * scaleRatio;
+                        const scaledXBack = x0Back * scaleRatioX;
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
                         
@@ -387,6 +388,7 @@ cropForm.addEventListener('submit', async (event) => {
                         );
                         backCardCount++;
                     }
+                    cardCount++;
                 }
                 else if(isFoldHorizontal) {
                     if (row % 2 === 0) {
@@ -413,6 +415,7 @@ cropForm.addEventListener('submit', async (event) => {
                         );
                         backCardCount++;
                     }
+                    cardCount++;
                 }
             }
         }
