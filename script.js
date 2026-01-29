@@ -196,8 +196,11 @@ cropForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const startingPage = parseInt(document.getElementById('startingPage').value, 10) || 1;
+    const dpi = parseInt(document.getElementById('dpi').value, 10) || 288;
+    const dpiScale = dpi / 72; // PDF is 72 DPI by default
     const isNoBack = document.getElementById('page_no_back').checked;
     const isDuplex = document.getElementById('page_duplex').checked;
+    const isDuplexShort = document.getElementById('page_duplex_short').checked;
     const isFoldVertical = document.getElementById('page_fold_vertical').checked;
     const isFoldHorizontal = document.getElementById('page_fold_horizontal').checked;
     const rows = parseInt(document.getElementById('rows').value, 10);
@@ -215,149 +218,200 @@ cropForm.addEventListener('submit', async (event) => {
     }
 
     pdfStatus.textContent = 'Processing...';
+    pdfStatus.classList.remove('success');
+    pdfStatus.classList.add('processing');
 
-    const frontPdf = await PDFLib.PDFDocument.create();
-    const backPdf = await PDFLib.PDFDocument.create();
+    const frontZip = new JSZip();
+    const backZip = new JSZip();
 
-    const pages = pdfDoc.getPages().slice(startingPage - 1);
+    const pdfLibPages = pdfDoc.getPages().slice(startingPage - 1);
     let currentPage = 0;
-    for (const page of pages) {
-        const { width, height } = page.getSize();
+    let cardCount = 0;
+    let frontCardCount = 0;
+    let backCardCount = 0;
+    const pageRenderPromises = [];
+
+    for (let pageIndex = 0; pageIndex < pdfLibPages.length; pageIndex++) {
+        const pdfLibPage = pdfLibPages[pageIndex];
+        const { width, height } = pdfLibPage.getSize();
         const totalRowMargin = rowMargin * (rows - 1);
         const totalColumnMargin = columnMargin * (columns - 1);
         const cardWidth = (width - leftMargin - rightMargin - totalColumnMargin) / columns;
         const cardHeight = (height - topMargin - bottomMargin - totalRowMargin) / rows;
+
+        // Use pdf.js to render the page at native resolution
+        const pdfPage = await pdf.getPage(startingPage + pageIndex);
+        const viewport = pdfPage.getViewport({ scale: dpiScale });
+        
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = viewport.width;
+        pageCanvas.height = viewport.height;
+        const pageCtx = pageCanvas.getContext('2d');
+
+        const renderContext = {
+            canvasContext: pageCtx,
+            viewport: viewport,
+        };
+        await pdfPage.render(renderContext).promise;
 
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < columns; col++) {
                 const x0 = leftMargin + col * (cardWidth + columnMargin);
                 const y0 = height - topMargin - (row + 1) * (cardHeight + rowMargin);
 
-                // Embed the page and set the cropping area
-                if (isNoBack) {
-                    const embeddedPage = await frontPdf.embedPage(page, {
-                        left: x0,
-                        bottom: y0 + rowMargin,
-                        right: x0 + cardWidth,
-                        top: y0 + cardHeight + rowMargin,
-                    });
+                // Create a canvas for the card at the specified DPI
+                const canvas = document.createElement('canvas');
+                canvas.width = cardWidth * dpiScale;
+                canvas.height = cardHeight * dpiScale;
+                const ctx = canvas.getContext('2d');
 
-                    // Add a new page for each crop
-                    const cardPage = frontPdf.addPage([cardWidth, cardHeight]);
-                    cardPage.drawPage(embeddedPage, {
-                        x: 0,
-                        y: 0,
-                        width: cardWidth,
-                        height: cardHeight,
-                    });
+                // Calculate scaled coordinates based on pdf.js render scale
+                // Note: PDF coordinates have origin at bottom-left, canvas has origin at top-left
+                const scaleRatio = viewport.width / width;
+                const scaledX = x0 * scaleRatio;
+                const scaledWidth = cardWidth * scaleRatio;
+                const scaledHeight = cardHeight * scaleRatio;
+                // Invert Y coordinate: canvas Y = viewport.height - (PDF y + height)
+                const scaledY = viewport.height - (y0 + cardHeight) * scaleRatio;
+
+                // Copy the cropped region to the card canvas
+                ctx.drawImage(pageCanvas, scaledX, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
+
+                // Convert canvas to PNG blob
+                const cardFileName = `card_${String(cardCount).padStart(4, '0')}.png`;
+                
+                if (isNoBack) {
+                    const currentCardCount = cardCount;
+                    pageRenderPromises.push(
+                        new Promise(resolve => {
+                            canvas.toBlob((blob) => {
+                                frontZip.file(`card_${String(currentCardCount).padStart(4, '0')}.png`, blob);
+                                resolve();
+                            }, 'image/png');
+                        })
+                    );
+                    cardCount++;
                 }
                 else if (isDuplex) {
                     if (currentPage % 2 === 0) {
-                        const embeddedPage = await frontPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = frontPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const currentFrontCount = frontCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        frontCardCount++;
                     }
                     else {
-                        const x0 = leftMargin + ((columns - 1) - col) * (cardWidth + columnMargin);
-                        const embeddedPage = await backPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = backPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const x0Back = leftMargin + ((columns - 1) - col) * (cardWidth + columnMargin);
+                        const scaledXBack = x0Back * scaleRatio;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
+                        const currentBackCount = backCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        backCardCount++;
+                    }
+                }
+                else if (isDuplexShort) {
+                    if (currentPage % 2 === 0) {
+                        const currentFrontCount = frontCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        frontCardCount++;
+                    }
+                    else {
+                        const x0Back = leftMargin + ((columns - 1) - col) * (cardWidth + columnMargin);
+                        const scaledXBack = x0Back * scaleRatio;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
+                        
+                        // Rotate canvas 180 degrees for short edge duplex
+                        const rotatedCanvas = document.createElement('canvas');
+                        rotatedCanvas.width = canvas.width;
+                        rotatedCanvas.height = canvas.height;
+                        const rotatedCtx = rotatedCanvas.getContext('2d');
+                        rotatedCtx.translate(canvas.width / 2, canvas.height / 2);
+                        rotatedCtx.rotate(Math.PI);
+                        rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+                        
+                        const currentBackCount = backCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                rotatedCanvas.toBlob((blob) => {
+                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        backCardCount++;
                     }
                 }
                 else if(isFoldVertical) {
                     if (col % 2 === 0) {
-                        const embeddedPage = await frontPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = frontPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const currentFrontCount = frontCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        frontCardCount++;
                     }
                     else {
-                        const embeddedPage = await backPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = backPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const currentBackCount = backCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        backCardCount++;
                     }
                 }
                 else if(isFoldHorizontal) {
                     if (row % 2 === 0) {
-                        const embeddedPage = await frontPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = frontPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const currentFrontCount = frontCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        frontCardCount++;
                     }
                     else {
-                        const embeddedPage = await backPdf.embedPage(page, {
-                            left: x0,
-                            bottom: y0 + rowMargin,
-                            right: x0 + cardWidth,
-                            top: y0 + cardHeight + rowMargin,
-                        });
-
-                        // Add a new page for each crop
-                        const cardPage = backPdf.addPage([cardWidth, cardHeight]);
-                        cardPage.drawPage(embeddedPage, {
-                            x: 0,
-                            y: 0,
-                            width: cardWidth,
-                            height: cardHeight,
-                        });
+                        const currentBackCount = backCardCount;
+                        pageRenderPromises.push(
+                            new Promise(resolve => {
+                                canvas.toBlob((blob) => {
+                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    resolve();
+                                }, 'image/png');
+                            })
+                        );
+                        backCardCount++;
                     }
                 }
             }
@@ -365,46 +419,39 @@ cropForm.addEventListener('submit', async (event) => {
         currentPage++;
     }
 
-    // Save the cropped PDF
-    if (isDuplex || isFoldVertical || isFoldHorizontal) {
-        const frontBytes = await frontPdf.save();
-        const backBytes = await backPdf.save();
+    // Wait for all blobs to be added to zip
+    await Promise.all(pageRenderPromises);
 
-        // Create a download link
-        const frontBlob = new Blob([frontBytes], { type: 'application/pdf' });
-        const frontUrl = URL.createObjectURL(frontBlob);
+    // Generate and download zip files
+    if (isDuplex || isDuplexShort || isFoldVertical || isFoldHorizontal) {
+        const frontBytes = await frontZip.generateAsync({ type: 'blob' });
+        const backBytes = await backZip.generateAsync({ type: 'blob' });
 
+        const frontUrl = URL.createObjectURL(frontBytes);
         const frontLink = document.getElementById('downloadFrontLink');
         frontLink.href = frontUrl;
-        frontLink.download = 'front_cards.pdf';
-        frontLink.textContent = 'Download Front PDF';
-        frontLink.style.display = 'block';
+        frontLink.classList.add('show');
 
-        const backBlob = new Blob([backBytes], { type: 'application/pdf' });
-        const backUrl = URL.createObjectURL(backBlob);
-
+        const backUrl = URL.createObjectURL(backBytes);
         const backLink = document.getElementById('downloadBackLink');
         backLink.href = backUrl;
-        backLink.download = 'back_cards.pdf';
-        backLink.textContent = 'Download Back PDF';
-        backLink.style.display = 'block';
+        backLink.classList.add('show');
 
-        pdfStatus.textContent = 'Done! Click the links to download your files.';
+        pdfStatus.textContent = '✓ Done! Click the links to download your files.';
+        pdfStatus.classList.remove('processing');
+        pdfStatus.classList.add('success');
     }
     else {
-        const outputBytes = await frontPdf.save();
+        const outputBytes = await frontZip.generateAsync({ type: 'blob' });
 
-        // Create a download link
-        const blob = new Blob([outputBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-
+        const url = URL.createObjectURL(outputBytes);
         const link = document.getElementById('downloadLink');
         link.href = url;
-        link.download = 'cropped_cards.pdf';
-        link.textContent = 'Download Cropped PDF';
-        link.style.display = 'block';
+        link.classList.add('show');
 
-        pdfStatus.textContent = 'Done! Click the link to download your file.';
+        pdfStatus.textContent = '✓ Done! Click the link to download your file.';
+        pdfStatus.classList.remove('processing');
+        pdfStatus.classList.add('success');
     }
 });
  

@@ -5,45 +5,441 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PnP Card Cropper</title>
   <style>
-    #previewCanvas {
-      border: 1px solid #000;
-      max-width: 100%;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      color: white;
+      margin-bottom: 40px;
+    }
+
+    h1 {
+      font-size: 2.5em;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .tagline {
+      font-size: 1.1em;
+      opacity: 0.95;
+      font-weight: 300;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 30px;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      font-size: 1.3em;
+      font-weight: 600;
+    }
+
+    .card-content {
+      padding: 30px;
+    }
+
+    .form-section {
+      margin-bottom: 25px;
+    }
+
+    .form-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 0.95em;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+    }
+
+    .section-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 2px;
+      margin-right: 10px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #555;
+      font-weight: 500;
+      font-size: 0.95em;
+    }
+
+    input[type="file"],
+    input[type="number"] {
+      width: 100%;
+      padding: 12px 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1em;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+
+    input[type="file"]:hover,
+    input[type="number"]:hover {
+      border-color: #667eea;
+    }
+
+    input[type="file"]:focus,
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .input-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .radio-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 0;
+    }
+
+    .radio-wrapper {
+      display: flex;
+      align-items: center;
+    }
+
+    input[type="radio"] {
+      margin-right: 8px;
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+      accent-color: #667eea;
+    }
+
+    input[type="radio"] + label {
+      margin-bottom: 0;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 25px;
+    }
+
+    button {
+      flex: 1;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.05em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .preview-section {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 30px;
+      text-align: center;
+    }
+
+    .preview-label {
+      font-size: 1.1em;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 20px;
+      display: block;
+    }
+
+    #previewCanvas {
+      max-width: 100%;
+      height: auto;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      display: block;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+
+    #zoomCanvas {
+      position: absolute;
+      border: 2px solid #667eea;
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+      background: white;
+    }
+
     #status {
-      margin-top: 10px;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    #status:empty {
+      display: none;
+    }
+
+    #status.processing {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffc107;
+    }
+
+    #status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #28a745;
+    }
+
+    .download-links {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .download-link {
+      flex: 1;
+      min-width: 200px;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 600;
+      display: none;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+    }
+
+    .download-link:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+    }
+
+    .download-link.show {
+      display: inline-block;
+    }
+
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2em;
+      }
+
+      .card-content {
+        padding: 20px;
+      }
+
+      .radio-group {
+        grid-template-columns: 1fr;
+      }
+
+      .input-group {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>PnP Card Cropper</h1>
-  <form id="cropForm">
-    <input type="file" id="pdfFile" accept="application/pdf" /><br>
-    <label>Starting Page: <input type="number" id="startingPage" value="1" min="1" /></label><br>
-    <label>Page Layout: </label>
-    <input type="radio" id="page_no_back" name="page_layout" value="no_back">
-    <label for="page_no_back">No Back Face</label>
-    <input type="radio" id="page_duplex" name="page_layout" value="duplex" checked>
-    <label for="page_duplex">Duplex</label>
-    <input type="radio" id="page_fold_vertical" name="page_layout" value="fold_vertical">
-    <label for="page_fold_vertical">Fold Vertical</label>
-    <input type="radio" id="page_fold_horizontal" name="page_layout" value="fold_horizontal">
-    <label for="page_fold_horizontal">Fold Horizontal</label><br>
-    <label>Rows: <input type="number" id="rows" value="1" min="1" /></label><br>
-    <label>Columns: <input type="number" id="columns" value="1" min="1" /></label><br>
-    <label>Top Margin: <input type="number" id="topMargin" value="0" min="0" /></label><br>
-    <label>Bottom Margin: <input type="number" id="bottomMargin" value="0" min="0" /></label><br>
-    <label>Left Margin: <input type="number" id="leftMargin" value="0" min="0" /></label><br>
-    <label>Right Margin: <input type="number" id="rightMargin" value="0" min="0" /></label><br>
-    <label>Row Margin: <input type="number" id="rowMargin" value="0" min="0" /></label><br>
-    <label>Column Margin: <input type="number" id="columnMargin" value="0" min="0" /></label><br>
-    <button type="submit">Crop PDF</button>
-  </form>
-  <div id="status"></div>
-  <a id="downloadLink" download="cropped.pdf" style="display:none">Download Cropped PDF</a>
-  <a id="downloadFrontLink" download="front.pdf" style="display:none">Download Front PDF</a>
-  <a id="downloadBackLink" download="back.pdf" style="display:none">Download Back PDF</a><br>
-  <canvas id="previewCanvas" width="1080" height="1920"></canvas>
-  <canvas id="zoomCanvas" width="400" height="200" style="position:absolute; top:0; left:0; display:none"></canvas>
+  <div class="container">
+    <header>
+      <h1>PnP Card Cropper</h1>
+    </header>
+
+    <div class="main-grid">
+      <div class="card">
+        <div class="card-header">Configuration</div>
+        <div class="card-content">
+          <form id="cropForm">
+            <!-- File Upload Section -->
+            <div class="form-section">
+              <label for="pdfFile" class="section-title">PDF File</label>
+              <input type="file" id="pdfFile" accept="application/pdf" />
+            </div>
+
+            <!-- Page Selection Section -->
+            <div class="form-section">
+              <label for="startingPage" class="section-title">Starting Page</label>
+              <input type="number" id="startingPage" value="1" min="1" />
+            </div>
+
+            <!-- DPI Selection Section -->
+            <div class="form-section">
+              <label for="dpi" class="section-title">Export DPI</label>
+              <input type="number" id="dpi" value="288" min="72" step="72" />
+            </div>
+
+            <!-- Layout Selection Section -->
+            <div class="form-section">
+              <label class="section-title">Page Layout</label>
+              <div class="radio-group">
+                <div class="radio-wrapper">
+                  <input type="radio" id="page_no_back" name="page_layout" value="no_back">
+                  <label for="page_no_back">No Back Face</label>
+                </div>
+                <div class="radio-wrapper">
+                  <input type="radio" id="page_duplex" name="page_layout" value="duplex" checked>
+                  <label for="page_duplex">Duplex (long edge)</label>
+                </div>
+                <div class="radio-wrapper">
+                  <input type="radio" id="page_duplex_short" name="page_layout" value="duplex_short">
+                  <label for="page_duplex_short">Duplex (short edge)</label>
+                </div>
+                <div class="radio-wrapper">
+                  <input type="radio" id="page_fold_vertical" name="page_layout" value="fold_vertical">
+                  <label for="page_fold_vertical">Fold Vertical</label>
+                </div>
+                <div class="radio-wrapper">
+                  <input type="radio" id="page_fold_horizontal" name="page_layout" value="fold_horizontal">
+                  <label for="page_fold_horizontal">Fold Horizontal</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Grid Configuration Section -->
+            <div class="form-section">
+              <label class="section-title">Grid Configuration</label>
+              <div class="input-group">
+                <div>
+                  <label for="rows">Rows</label>
+                  <input type="number" id="rows" value="1" min="1" />
+                </div>
+                <div>
+                  <label for="columns">Columns</label>
+                  <input type="number" id="columns" value="1" min="1" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Margins Section -->
+            <div class="form-section">
+              <label class="section-title">Page Margins</label>
+              <div class="input-group">
+                <div>
+                  <label for="topMargin">Top</label>
+                  <input type="number" id="topMargin" value="0" min="0" step="0.1" />
+                </div>
+                <div>
+                  <label for="bottomMargin">Bottom</label>
+                  <input type="number" id="bottomMargin" value="0" min="0" step="0.1" />
+                </div>
+                <div>
+                  <label for="leftMargin">Left</label>
+                  <input type="number" id="leftMargin" value="0" min="0" step="0.1" />
+                </div>
+                <div>
+                  <label for="rightMargin">Right</label>
+                  <input type="number" id="rightMargin" value="0" min="0" step="0.1" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Spacing Section -->
+            <div class="form-section">
+              <label class="section-title">Card Spacing</label>
+              <div class="input-group">
+                <div>
+                  <label for="rowMargin">Row Spacing</label>
+                  <input type="number" id="rowMargin" value="0" min="0" step="0.1" />
+                </div>
+                <div>
+                  <label for="columnMargin">Column Spacing</label>
+                  <input type="number" id="columnMargin" value="0" min="0" step="0.1" />
+                </div>
+              </div>
+            </div>
+
+            <div class="button-group">
+              <button type="submit">Crop PDF</button>
+            </div>
+          </form>
+          <div id="status"></div>
+        </div>
+      </div>
+
+      <div class="preview-section">
+        <label class="preview-label">Preview</label>
+        <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+      </div>
+    </div>
+
+    <!-- Download Links -->
+    <div class="card" style="margin-top: 30px;">
+      <div class="card-content" style="padding: 20px;">
+        <div class="download-links">
+          <a id="downloadLink" download="cards.zip" class="download-link">⬇️ Download Cards (ZIP)</a>
+          <a id="downloadFrontLink" download="front_cards.zip" class="download-link">⬇️ Download Front Cards (ZIP)</a>
+          <a id="downloadBackLink" download="back_cards.zip" class="download-link">⬇️ Download Back Cards (ZIP)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="zoomCanvas" width="400" height="200" style="display:none"></canvas>
+  <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
   <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
   <script src="script.js"></script>
