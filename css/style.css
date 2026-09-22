@@ -1,0 +1,854 @@
+/* ==========================================================================
+   PnPTools shared UI — canonical stylesheet
+   Same file is used (verbatim) across PnPBleed, PnPAlign, PnPBooklet,
+   PnPCardCrop and PnPLayout so every tool looks and behaves identically.
+   Visual reference: PnPBooklet's original dark app-chrome design.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap');
+
+:root {
+    color-scheme: dark;
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3344;
+    --accent: #6c8cff;
+    --accent-hover: #8aa4ff;
+    --text: #e4e6f0;
+    --text-dim: #8b8fa8;
+    --text-muted: #8b8fa8;
+    --danger: #ff6b6b;
+    --success: #51cf66;
+    --info: #6c8cff;
+    --warning: #ffcc66;
+    --radius: 10px;
+    --radius-lg: 10px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    color: var(--text);
+}
+
+a {
+    color: inherit;
+}
+
+/* ---- Shell ------------------------------------------------------------- */
+
+.container {
+    max-width: none;
+    margin: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background: var(--surface);
+    color: var(--text);
+    padding: 18px 32px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+}
+
+header .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    opacity: 1;
+    max-width: none;
+    margin: 0;
+}
+
+/* ---- Layout: sidebar + main -------------------------------------------- */
+
+.content {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 0;
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+}
+
+.content.with-gallery {
+    grid-template-columns: 340px 1fr 260px;
+}
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 20px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    min-width: 0;
+    overflow-y: auto;
+}
+
+.gallery-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    min-width: 0;
+    overflow-y: auto;
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+    padding: 28px;
+    overflow: auto;
+    background: var(--bg);
+}
+
+/* ---- Panels (grouped controls within the sidebar) ---------------------- */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+}
+
+.panel-title {
+    position: relative;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ---- Help tooltip (a "?" mark that reveals a longer note on hover/focus) - */
+/* Positioned relative to .panel-title (not the small icon itself) and pinned
+   to its full width, so it always opens downward and never overflows past
+   the sidebar's edge regardless of where the icon sits in the title. */
+
+.help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: help;
+    vertical-align: middle;
+}
+
+.help:hover,
+.help:focus-visible {
+    border-color: var(--accent);
+    color: var(--accent);
+    outline: none;
+}
+
+.help::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 6px;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s;
+    z-index: 30;
+}
+
+.help:hover::after,
+.help:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ---- Form controls ------------------------------------------------------ */
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.control-group label {
+    font-weight: 500;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.control-group label.inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+}
+
+.row > * {
+    flex: 1;
+}
+
+input[type="file"],
+input[type="number"],
+input[type="text"],
+select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--surface);
+    transition: border-color 0.2s;
+    outline: none;
+}
+
+input[type="file"] {
+    padding: 8px;
+    cursor: pointer;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus,
+input[type="file"]:focus,
+select:focus {
+    border-color: var(--accent);
+}
+
+input[type="number"]:hover,
+input[type="text"]:hover,
+input[type="file"]:hover,
+select:hover {
+    border-color: var(--accent);
+}
+
+select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%238b8fa8'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 30px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+input[type="color"] {
+    width: 100%;
+    height: 40px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--surface);
+}
+
+.input-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.radio-group,
+.checkbox-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.radio-group.stacked,
+.checkbox-group.stacked {
+    grid-template-columns: 1fr;
+}
+
+.radio-group label,
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text);
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
+}
+
+.slider-field {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.slider-field label {
+    grid-column: 1 / -1;
+}
+
+.slider-field output {
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align: right;
+    min-width: 3em;
+}
+
+/* ---- Dropzone ------------------------------------------------------------ */
+
+.dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+.dropzone:hover,
+.dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(108, 140, 255, 0.06);
+}
+
+.dropzone input[type="file"] {
+    display: none;
+}
+
+.dropzone .dz-title {
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.dropzone-count {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    flex-direction: column;
+}
+
+button,
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, filter 0.2s;
+    text-transform: none;
+    letter-spacing: normal;
+    text-decoration: none;
+    font-family: inherit;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--surface2);
+    border-color: var(--accent);
+}
+
+.btn-success {
+    background: var(--success);
+    color: #111111;
+}
+
+.btn-success:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+button:disabled,
+.btn:disabled,
+.btn[aria-disabled="true"] {
+    background: var(--border);
+    color: var(--text-dim);
+    opacity: 1;
+    cursor: not-allowed;
+}
+
+.btn-small {
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+/* ---- Status / feedback ------------------------------------------------- */
+
+.status {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    text-align: center;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+
+.status.info { color: var(--accent); border-color: rgba(108, 140, 255, 0.3); background: rgba(108, 140, 255, 0.08); }
+.status.success { color: var(--success); border-color: rgba(81, 207, 102, 0.3); background: rgba(81, 207, 102, 0.08); }
+.status.error { color: var(--danger); border-color: rgba(255, 107, 107, 0.3); background: rgba(255, 107, 107, 0.08); }
+.status.processing { color: var(--warning); border-color: rgba(255, 204, 102, 0.3); background: rgba(255, 204, 102, 0.08); }
+.status:empty { display: none; }
+
+/* ---- Preview / canvas areas --------------------------------------------- */
+
+.preview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.preview-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.preview-canvas-container,
+.canvas-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-height: 300px;
+    overflow: auto;
+}
+
+.preview-canvas-container canvas,
+.canvas-container canvas,
+.preview-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 4px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    background:
+        linear-gradient(45deg, #2e3344 25%, transparent 25%),
+        linear-gradient(-45deg, #2e3344 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2e3344 75%),
+        linear-gradient(-45deg, transparent 75%, #2e3344 75%);
+    background-color: #1a1d27;
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.comparison-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+}
+
+.comparison-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.comparison-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+}
+
+/* ---- Thumbnails / gallery ------------------------------------------------ */
+
+.thumbnails-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: flex;
+    gap: 10px;
+    min-height: 120px;
+}
+
+.thumbnail {
+    position: relative;
+    flex-shrink: 0;
+    width: 100px;
+    height: 100px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.2s;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thumbnail img,
+.thumbnail canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: var(--surface2);
+}
+
+.thumbnail.active {
+    border-color: var(--accent);
+}
+
+.thumbnail:hover {
+    border-color: var(--accent);
+}
+
+.thumbnail .badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    text-align: center;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--text);
+}
+
+.gallery {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.gallery-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+}
+
+/* ---- Info grid ------------------------------------------------------------ */
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 12px;
+    border-radius: var(--radius);
+    font-size: 12px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.info-label {
+    color: var(--text-dim);
+    font-weight: 600;
+}
+
+.info-value {
+    color: var(--text);
+    font-weight: 500;
+}
+
+/* ---- Empty state ----------------------------------------------------------- */
+
+.empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 40px 20px;
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+/* ---- Downloads --------------------------------------------------------------- */
+
+.download-links {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.download-link {
+    flex: 1;
+    min-width: 200px;
+    display: none;
+}
+
+.download-link.show {
+    display: inline-flex;
+}
+
+/* ---- File list chip ------------------------------------------------------------ */
+
+.file-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--text);
+}
+
+.file-info .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-info .remove {
+    background: none;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 6px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+/* ---- Loading spinner -------------------------------------------------------------- */
+
+.loading {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 17, 23, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 1000;
+    color: var(--text-dim);
+}
+
+.loading-overlay[hidden],
+.loading-overlay.hidden {
+    display: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* ---- Scrollbars ----------------------------------------------------------------- */
+
+.thumbnails-container::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar,
+.gallery-sidebar::-webkit-scrollbar,
+.main::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.thumbnails-container::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track,
+.gallery-sidebar::-webkit-scrollbar-track,
+.main::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.thumbnails-container::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb,
+.gallery-sidebar::-webkit-scrollbar-thumb,
+.main::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.thumbnails-container::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover,
+.gallery-sidebar::-webkit-scrollbar-thumb:hover,
+.main::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dim);
+}
+
+/* ---- Responsive ------------------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+    .content,
+    .content.with-gallery {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .gallery-sidebar {
+        border-left: none;
+        border-top: 1px solid var(--border);
+    }
+
+    .comparison-container {
+        grid-template-columns: 1fr;
+    }
+
+    .row {
+        flex-direction: column;
+    }
+
+    .radio-group,
+    .checkbox-group {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    header h1 { font-size: 1.2rem; }
+    .main { padding: 16px; }
+    .sidebar, .gallery-sidebar { padding: 16px; }
+}
+
+/* ---- PnPCardCrop: floating magnifier -------------------------------------
+   Positioned via JS (style.top/left set from pageX/pageY) as a mousemove
+   magnifier over the preview canvas; hidden by default via inline style. */
+
+#zoomCanvas {
+    position: absolute;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    background: #fff;
+    z-index: 10;
+}
