@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PnP Freeform Crop</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/tool.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="shared/icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#1a1d27">
+  <script src="shared/pnp-theme.js"></script>
+  <link rel="stylesheet" href="shared/pnp-shared.css">
+  <link rel="stylesheet" href="shared/pnp-editor.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body class="editor-page">
+  <div class="container">
+    <header>
+      <h1>Freeform Crop</h1>
+      <p class="subtitle">Cut any shape out of a scan or PDF page — tokens, tiles, odd-shaped cards — as PNGs with transparent backgrounds.</p>
+      <nav class="tool-nav">
+        <a class="nav-link" href="index.html">&larr; Grid crop</a>
+        <a class="nav-link current" href="freeform.html">Freeform crop</a>
+      </nav>
+    </header>
+
+    <div class="content with-gallery">
+      <div class="sidebar">
+        <div class="panel">
+          <div class="panel-title">Scans <span class="help" tabindex="0" data-tip="Add scanned images or PDFs. Each image and each PDF page is a separate page here; crop regions are kept per page.">?</span></div>
+          <div class="dropzone" id="dropZone">
+            <div class="dz-title">Drag &amp; drop scans or PDFs</div>
+            <div>or click to browse</div>
+            <input type="file" id="fileInput" multiple accept="image/*,application/pdf" hidden>
+          </div>
+          <div id="importSlot"></div>
+          <div class="page-list" id="pageList"></div>
+          <div class="row">
+            <div class="control-group">
+              <label for="pdfDpi">PDF render DPI</label>
+              <input type="number" id="pdfDpi" value="300" min="72" max="1200" step="1">
+            </div>
+            <div class="control-group">
+              <label for="scanDpi">Image DPI if unknown</label>
+              <input type="number" id="scanDpi" value="300" min="30" max="2400" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Find Pieces <span class="help" tabindex="0" data-tip="“Detect all objects” outlines every separate object on the page that stands out from the scan background. Or use the Trace tool (T) to click objects one by one, or draw regions with the rectangle, ellipse, pen and freehand tools.">?</span></div>
+          <button type="button" class="btn-primary" id="detectBtn">Detect all objects</button>
+          <div class="control-group">
+            <label for="minArea">Ignore specks smaller than (mm²)</label>
+            <input type="number" id="minArea" value="40" min="1" step="5">
+          </div>
+          <div class="input-hint">Uses the trace tolerance and smoothing below. Rotate a rectangle region to straighten a tilted card — it's exported upright.</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Canvas</div>
+          <div class="input-hint">V select, A nodes, R rect, E ellipse, P pen, F freehand, T trace &middot; drag from a ruler for guides &middot; Ctrl/Cmd+scroll to zoom, Space-drag to pan.</div>
+          <div id="editorOptions" class="editor-options"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Export</div>
+          <div class="control-group">
+            <label for="cropMargin">Extra margin around outlines (mm)</label>
+            <input type="number" id="cropMargin" data-unit="mm" value="0" min="0" max="10" step="0.25">
+            <div class="input-hint">Keeps a little of the scan beyond each outline.</div>
+          </div>
+          <div class="button-group">
+            <button type="button" class="btn-primary" id="downloadBtn" disabled>Download PNGs (ZIP)</button>
+          </div>
+          <div id="sendSlot"></div>
+          <div class="status" id="status" hidden></div>
+        </div>
+      </div>
+
+      <div class="main">
+        <div id="editorStage" class="editor-stage"></div>
+      </div>
+
+      <div class="gallery-sidebar">
+        <div class="panel">
+          <div class="panel-title">Region</div>
+          <div class="region-count" id="regionCount"></div>
+          <div id="editorProps"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/pnp-shared.js"></script>
+  <script src="shared/pathgeom.js"></script>
+  <script src="shared/raster.js"></script>
+  <script src="shared/pnp-editor.js"></script>
+  <script src="js/freeform.js"></script>
+</body>
+</html>

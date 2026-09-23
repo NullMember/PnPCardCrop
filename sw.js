@@ -8,7 +8,7 @@
 // - Pages post the list of resources they loaded, so everything a tool needs
 //   is cached right after the first visit.
 
-const CACHE = 'pnptools-v1';
+const CACHE = 'pnptools-v2'; // bump to drop old caches (v1 held opaque font copies)
 const CDN_HOSTS = ['cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -41,7 +41,9 @@ async function networkFirst(request) {
 async function cacheFirst(request) {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(request);
-    if (cached) return cached;
+    // An opaque (no-CORS) copy can't answer a CORS request such as a web
+    // font; the browser would reject it, so fetch a proper copy instead.
+    if (cached && !(cached.type === 'opaque' && request.mode === 'cors')) return cached;
     const response = await fetch(request);
     if (response.ok || response.type === 'opaque') cache.put(request, response.clone());
     return response;
@@ -71,7 +73,18 @@ self.addEventListener('message', (event) => {
                 const sameOrigin = url.origin === self.location.origin;
                 if (!sameOrigin && !isCdn(url)) return;
                 if (!sameOrigin && await cache.match(url.href)) return;
-                const response = await fetch(url.href, sameOrigin ? {} : { mode: 'no-cors' });
+                // Cross-origin: prefer a CORS copy (usable by fonts and scripts
+                // alike); fall back to opaque only if the CDN refuses CORS.
+                let response;
+                if (sameOrigin) {
+                    response = await fetch(url.href);
+                } else {
+                    try {
+                        response = await fetch(url.href, { mode: 'cors' });
+                    } catch (err) {
+                        response = await fetch(url.href, { mode: 'no-cors' });
+                    }
+                }
                 if (response.ok || response.type === 'opaque') await cache.put(url.href, response);
             } catch (err) { /* offline or blocked: skip */ }
         }));

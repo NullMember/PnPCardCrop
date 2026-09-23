@@ -17,6 +17,10 @@
     <header>
       <h1>PnP Card Cropper</h1>
       <p class="subtitle">Crop cards out of a print-and-play PDF sheet and export them as ready-to-use image ZIPs.</p>
+      <nav class="tool-nav">
+        <a class="nav-link current" href="index.html">Grid crop</a>
+        <a class="nav-link" href="freeform.html">Freeform crop &rarr;</a>
+      </nav>
     </header>
 
     <div class="content">
@@ -24,13 +28,17 @@
         <form id="cropForm">
           <!-- File Upload Section -->
           <div class="panel">
-            <div class="panel-title">PDF File</div>
+            <div class="panel-title">Card Sheets <span class="help" tabindex="0" data-tip="A PDF, or one or more images (PNG, JPEG, WebP, GIF, BMP, AVIF… anything your browser can open). Each image is one page, taken in name order, so a front image followed by a back image works for the duplex layouts.">?</span></div>
             <div class="dropzone" id="pdfDropZone">
-              <div class="dz-title">Drag &amp; drop a PDF here</div>
+              <div class="dz-title">Drag &amp; drop a PDF or sheet images</div>
               <div>or click to browse</div>
-              <input type="file" id="pdfFile" accept="application/pdf" hidden />
+              <input type="file" id="pdfFile" accept="application/pdf,image/*" multiple hidden />
             </div>
             <div class="dropzone-count" id="pdfFileName"></div>
+            <div class="control-group">
+              <label for="imageDpi">Image DPI (if the file doesn't say)</label>
+              <input type="number" id="imageDpi" value="300" min="30" max="2400" step="1" />
+            </div>
           </div>
 
           <!-- Page Selection Section -->
@@ -180,9 +188,14 @@
           </div>
 
           <div class="button-group">
-            <button type="submit" class="btn-primary">Crop PDF</button>
+            <button type="submit" class="btn-primary">Crop cards</button>
           </div>
         </form>
+
+        <div class="panel">
+          <div class="panel-title">Use the Cropped Cards</div>
+          <div id="sendSlot"></div>
+        </div>
       </div>
 
       <div class="main">
@@ -222,7 +235,6 @@
           <a id="downloadFrontLink" download="front_cards.zip" class="download-link btn btn-success">⬇️ Download Front Cards (ZIP)</a>
           <a id="downloadBackLink" download="back_cards.zip" class="download-link btn btn-success">⬇️ Download Back Cards (ZIP)</a>
         </div>
-        <div id="sendSlot"></div>
       </div>
     </div>
   </div>

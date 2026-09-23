@@ -237,8 +237,65 @@
             return files;
         }
 
-        return { create, read };
+        return { create, read, crc32 };
     })();
+
+    // ---------------------------------------------------------------- image DPI
+
+    // DPI stored in a PNG (pHYs chunk) or JPEG (JFIF header); null if absent.
+    async function readImageDpi(file) {
+        const bytes = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+        const view = new DataView(bytes.buffer);
+        if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+            let p = 8;
+            while (p + 12 <= bytes.length) {
+                const len = view.getUint32(p);
+                const type = String.fromCharCode(...bytes.subarray(p + 4, p + 8));
+                if (type === 'pHYs' && p + 17 <= bytes.length) {
+                    const ppu = view.getUint32(p + 8);
+                    return bytes[p + 16] === 1 && ppu > 0 ? ppu * 0.0254 : null;
+                }
+                if (type === 'IDAT' || type === 'IEND') return null;
+                p += 12 + len;
+            }
+            return null;
+        }
+        if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+            let p = 2;
+            while (p + 4 < bytes.length && bytes[p] === 0xff) {
+                const marker = bytes[p + 1];
+                const len = view.getUint16(p + 2);
+                if (marker === 0xe0 && String.fromCharCode(...bytes.subarray(p + 4, p + 9)) === 'JFIF\0') {
+                    const units = bytes[p + 11];
+                    const density = view.getUint16(p + 12);
+                    if (!density) return null;
+                    if (units === 1) return density;
+                    if (units === 2) return density * 2.54;
+                    return null;
+                }
+                p += 2 + len;
+            }
+        }
+        return null;
+    }
+
+    // A PNG blob with its DPI recorded (a pHYs chunk after IHDR), so other
+    // tools and apps know its physical size.
+    async function setPngDpi(blob, dpi) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (bytes[0] !== 0x89 || bytes[1] !== 0x50) return blob;
+        const ppm = Math.round(dpi / 0.0254);
+        const chunk = new Uint8Array(21);
+        const view = new DataView(chunk.buffer);
+        view.setUint32(0, 9);
+        chunk.set([0x70, 0x48, 0x59, 0x73], 4); // "pHYs"
+        view.setUint32(8, ppm);
+        view.setUint32(12, ppm);
+        chunk[16] = 1; // metre
+        view.setUint32(17, zip.crc32(chunk.subarray(4, 17)));
+        const ihdrEnd = 8 + 25;
+        return new Blob([bytes.subarray(0, ihdrEnd), chunk, bytes.subarray(ihdrEnd)], { type: 'image/png' });
+    }
 
     // ---------------------------------------------------------------- presets
 
@@ -674,7 +731,7 @@
                         buttons.forEach((b) => (b.disabled = false));
                     }
                 },
-            }, `${tool.icon} ${tool.name}`);
+            }, h('span', { class: 'pnp-send-icon', 'aria-hidden': 'true' }, tool.icon), h('span', {}, tool.name));
             buttons.push(btn);
             row.append(btn);
         });
@@ -957,6 +1014,8 @@
         toast,
         zip,
         downloadBlob,
+        readImageDpi,
+        setPngDpi,
         canvasToBlob: (canvas, type = 'image/png', quality) => new Promise((resolve, reject) => {
             canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image.'))), type, quality);
         }),

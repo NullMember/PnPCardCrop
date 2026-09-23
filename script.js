@@ -24,7 +24,7 @@ let isDragging = false;
 const MM_TO_PT = 72 / 25.4;
 const PT_TO_MM = 25.4 / 72;
 
-let pdfFile = null;   // the loaded File, kept for project saving
+let sourceFiles = []; // the loaded PDF or images, kept for project saving
 let lastCrop = null;  // { front: [{ name, blob }], back: [...] } from the last Crop run
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -32,14 +32,64 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 const PREVIEW_BOX_W = 1080;
 const PREVIEW_BOX_H = 1528;
 
-// Load a PDF: pdf.js renders the previews, pdf-lib provides page geometry for cropping
-async function loadPdf(file) {
-    const pdfBytes = await file.arrayBuffer();
-    // pdf.js may transfer (detach) the buffer it is given, so hand it a copy
-    pdf = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) }).promise;
-    pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
-    pdfFile = file;
-    document.getElementById('pdfFileName').textContent = `${file.name} · ${pdf.numPages} page(s)`;
+// Images stand in for PDF pages: `pdf` / `pdfDoc` only need page sizes (in
+// points) and rendering to a canvas, so each image becomes a page of that
+// interface and every layout mode works unchanged. Page size comes from the
+// DPI stored in the image, or the "Image DPI" setting.
+async function imageDocument(files) {
+    const fallbackDpi = parseFloat(document.getElementById('imageDpi').value) || 300;
+    const pages = [];
+    for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const img = await new Promise((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = () => reject(new Error(`${file.name} is not an image this browser can read`));
+            el.src = url;
+        });
+        const dpi = (await PnP.readImageDpi(file)) || fallbackDpi;
+        pages.push({ img, width: (img.naturalWidth / dpi) * 72, height: (img.naturalHeight / dpi) * 72 });
+    }
+    const pageApi = (p) => ({
+        getViewport: ({ scale }) => ({ width: p.width * scale, height: p.height * scale, scale }),
+        render: ({ canvasContext, viewport }) => {
+            canvasContext.drawImage(p.img, 0, 0, viewport.width, viewport.height);
+            return { promise: Promise.resolve() };
+        },
+    });
+    return {
+        pdf: { numPages: pages.length, getPage: async (n) => pageApi(pages[n - 1]) },
+        pdfDoc: {
+            getPageCount: () => pages.length,
+            getPages: () => pages.map((p) => ({ getSize: () => ({ width: p.width, height: p.height }) })),
+        },
+    };
+}
+
+// Load a PDF (pdf.js renders, pdf-lib gives page geometry) or a set of images
+// (one page each, in name order).
+async function loadSource(files) {
+    files = [...files];
+    const pdfs = files.filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (pdfs.length) {
+        if (pdfs.length > 1 || images.length) PnP.toast(`Using ${pdfs[0].name}; add images on their own, or one PDF at a time.`, 'info');
+        const pdfBytes = await pdfs[0].arrayBuffer();
+        // pdf.js may transfer (detach) the buffer it is given, so hand it a copy
+        pdf = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) }).promise;
+        pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
+        sourceFiles = [pdfs[0]];
+        document.getElementById('pdfFileName').textContent = `${pdfs[0].name} · ${pdf.numPages} page(s)`;
+    } else if (images.length) {
+        images.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        ({ pdf, pdfDoc } = await imageDocument(images));
+        sourceFiles = images;
+        document.getElementById('pdfFileName').textContent = images.length === 1
+            ? `${images[0].name} · 1 page`
+            : `${images.length} images · ${images.length} pages`;
+    } else {
+        throw new Error('Add a PDF or image files.');
+    }
 
     const startingPageInput = document.getElementById('startingPage');
     startingPageInput.max = pdf.numPages;
@@ -49,6 +99,11 @@ async function loadPdf(file) {
     await autoDetectPageSize(startingPage);
     await showPreviewPage(startingPage);
 }
+
+// Image page sizes depend on the DPI setting, so reload images when it changes.
+document.getElementById('imageDpi').addEventListener('change', () => {
+    if (sourceFiles.length && sourceFiles[0].type.startsWith('image/')) loadSource(sourceFiles);
+});
 
 document.getElementById('startingPage').addEventListener('input', async (event) => {
     if (!pdfDoc) return;
@@ -391,7 +446,7 @@ cropForm.addEventListener('submit', async (event) => {
     const columnSpacingMM = parseFloat(document.getElementById('columnSpacing').value) || 0;
 
     if (!pdfDoc || !rows || !columns || !cardWidthMM || !cardHeightMM) {
-        alert('Please upload a PDF and set the card size and grid parameters.');
+        alert('Please add a PDF or images and set the card size and grid parameters.');
         return;
     }
 
@@ -718,10 +773,10 @@ cropForm.addEventListener('submit', async (event) => {
 
 PnP.dropzone(document.getElementById('pdfDropZone'), {
     input: document.getElementById('pdfFile'),
-    accept: ['application/pdf', '.pdf'],
-    onFiles: (files) => loadPdf(files[0]).catch((err) => {
+    accept: ['application/pdf', '.pdf', 'image/*'],
+    onFiles: (files) => loadSource(files).catch((err) => {
         console.error(err);
-        PnP.toast(`Could not open the PDF: ${err.message}`, 'error');
+        PnP.toast(`Could not open the file: ${err.message}`, 'error');
     }),
 });
 
@@ -740,17 +795,17 @@ PnP.init({
     offlineFiles: [pdfjsLib.GlobalWorkerOptions.workerSrc],
     settingsRoot: cropForm,
     project: {
-        getFiles: () => (pdfFile ? [{ name: pdfFile.name, blob: pdfFile }] : []),
-        setFiles: (files) => (files[0] ? loadPdf(files[0]) : null),
+        getFiles: () => sourceFiles.map((f) => ({ name: f.name, blob: f })),
+        setFiles: (files) => (files.length ? loadSource(files) : null),
     },
-    hasUnsavedWork: () => !!pdfFile,
+    hasUnsavedWork: () => sourceFiles.length > 0,
 });
 
 // ---- Centre the grid on the page's printed content ----
 
 document.getElementById('centerOnArtBtn').addEventListener('click', () => {
     if (!previewImage) {
-        PnP.toast('Load a PDF first.', 'error');
+        PnP.toast('Add a PDF or images first.', 'error');
         return;
     }
     const w = previewImage.width, h = previewImage.height;

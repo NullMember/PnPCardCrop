@@ -137,21 +137,38 @@
 
 /* ---- Send to / Import ---------------------------------------------------- */
 
+/* "Send to" label on its own line, all target buttons in one even row. */
 .pnp-send {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
     gap: 6px;
     margin-top: 10px;
 }
 
-.pnp-send-label {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    margin-right: 2px;
+/* Icon above the name keeps every target in one row in a narrow sidebar. */
+.pnp-send .btn-small {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 4px;
+    font-size: 0.72rem;
+    min-width: 0;
 }
 
-.pnp-send .btn-small,
+.pnp-send-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.pnp-send-label {
+    grid-column: 1 / -1;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.pnp-send .btn-small span {
+    white-space: nowrap;
+}
+
 .pnp-import .btn-small {
     padding: 6px 10px;
     font-size: 0.78rem;
@@ -265,4 +282,30 @@
 .dropzone:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+}
+
+/* ---- Sub-page nav (tools with several pages) --------------------------- */
+
+.tool-nav {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.nav-link {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.nav-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+.nav-link.current {
+    color: var(--text-dim);
+    pointer-events: none;
+    text-decoration: none;
 }

@@ -1,0 +1,624 @@
+/* PnPTools vector editor styles — canonical copy lives in the hub's shared/
+   folder, copied into tools by scripts/sync-shared.sh. Used with
+   pnp-editor.js; pages using the editor add class "editor-page" to <body>. */
+
+/* The editor page fills the viewport; panels scroll inside it. */
+.editor-page .content {
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.editor-page .sidebar,
+.editor-page .gallery-sidebar,
+.editor-page .main {
+    min-height: 0;
+}
+
+/* ---- Segmented tool/layer button groups --------------------------------- */
+
+.tool-btn,
+.layer-btn {
+    flex: 1 1 auto;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
+}
+
+.tool-btn.active,
+.layer-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+}
+
+/* Vertical tool palette, docked to the left edge of the canvas */
+.canvas-toolbar-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-self: flex-start;
+    padding: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+.canvas-toolbar-left .tool-btn {
+    flex: none;
+    width: 40px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.canvas-toolbar-left .tool-btn:hover:not(.active) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Layer bar docked above the canvas: visibility, color and active-layer pick */
+.canvas-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.canvas-topbar-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+}
+
+.layer-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.layer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.layer-row input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.layer-color {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: none;
+    cursor: pointer;
+}
+
+.layer-row .layer-btn {
+    flex: none;
+}
+
+
+/* ---- SVG preview / canvas surfaces --------------------------------------- */
+/* The exported artwork is placed on white paper, so the checkerboard stays
+   light-on-dark-surface instead of matching the app's own theme. */
+
+.canvas-wrap {
+    background:
+        linear-gradient(45deg, var(--checker) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--checker) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--checker) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--checker) 75%);
+    background-color: var(--surface);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    overflow: auto;
+}
+
+/* Flex + auto margins (not justify/align-content) so the card centers on
+   both axes when it fits, but scrolls to every edge without clipping when
+   zoomed past the viewport — justify/align-content: center would clip the
+   start edge on overflow. */
+.canvas-wrap {
+    display: flex;
+}
+
+#canvasSvg {
+    height: auto;
+    background: #ffffff;
+    box-shadow: 0 4px 24px var(--shadow);
+}
+
+#canvasSvg {
+    touch-action: none;
+    display: block;
+    margin: auto;
+    flex-shrink: 0;
+}
+
+circle.handle {
+    fill: var(--surface2);
+    stroke: var(--accent);
+    stroke-width: 0.5;
+    cursor: pointer;
+}
+
+circle.handle-rotate {
+    fill: var(--accent);
+}
+
+circle.handle-move {
+    fill: var(--accent);
+    stroke: #ffffff;
+    cursor: move;
+}
+
+.shape-hit {
+    cursor: move;
+    pointer-events: stroke;
+}
+
+.snap-guide {
+    stroke: #ff3fb0;
+    stroke-width: 0.5;
+    stroke-dasharray: 2,1.4;
+    pointer-events: none;
+}
+
+.marquee-rect {
+    fill: rgba(74, 144, 217, 0.15);
+    stroke: #4a90d9;
+    stroke-width: 1;
+    stroke-dasharray: 3,2;
+    pointer-events: none;
+}
+
+.multi-select-outline {
+    fill: none;
+    stroke: #4a90d9;
+    stroke-width: 0.4;
+    stroke-dasharray: 1.2,1;
+    pointer-events: none;
+}
+
+.group-select-outline {
+    fill: none;
+    stroke: #4a90d9;
+    stroke-width: 0.4;
+    pointer-events: none;
+}
+
+.snap-point {
+    fill: #ff3fb0;
+    stroke: #ffffff;
+    stroke-width: 0.3;
+    pointer-events: none;
+}
+
+/* ---- Editor page: hard-cap the page to the viewport --------------------- */
+/* The flex/grid min-height:0 chain above should in theory let the canvas's
+   own overflow:auto do the scrolling, but a zoomed-in SVG's large intrinsic
+   size still ends up growing the page in some browsers. A hard viewport cap
+   + overflow:hidden on the shell is a guaranteed backstop: nothing inside
+   can push the page taller no matter how the inner sizing plays out. Scoped
+   to .editor-page (editor.html only) so it can't affect any other tool that
+   shares this stylesheet or PnPCut's own non-editor pages. */
+
+.editor-page {
+    height: 100vh;
+    overflow: hidden;
+}
+
+.editor-page .container {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ---- Canvas stage: layout, zoom/pan chrome ------------------------------ */
+
+.canvas-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.canvas-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 10px;
+}
+
+.canvas-body .canvas-wrap {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.canvas-wrap.pan-ready,
+.canvas-wrap.pan-ready #canvasSvg {
+    cursor: grab;
+}
+
+.canvas-wrap.panning,
+.canvas-wrap.panning #canvasSvg {
+    cursor: grabbing !important;
+}
+
+.canvas-toolbar {
+    position: absolute;
+    top: 30px; /* below the ruler */
+    right: 12px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+.zoom-btn {
+    min-width: 26px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.zoom-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-hover);
+}
+
+.zoom-btn-wide {
+    font-size: 11px;
+}
+
+.zoom-level {
+    min-width: 42px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+}
+
+.zoom-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 2px;
+}
+
+/* ---- Properties / history panel ------------------------------------------ */
+
+.props-empty {
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.btn-secondary.danger {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.history-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* ---- Grid and snapping controls (canvas toolbar) ---------------------------- */
+
+.toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-btn[aria-pressed="true"],
+.toggle-btn[aria-pressed="true"]:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+}
+
+.grid-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.grid-size input {
+    width: 52px;
+    height: 26px;
+    padding: 0 6px;
+    font-size: 12px;
+}
+
+.grid-unit {
+    font-size: 10px;
+}
+
+.grid-line {
+    stroke: rgba(74, 144, 217, 0.22);
+    stroke-width: 0.5;
+    pointer-events: none;
+}
+
+.grid-line.major {
+    stroke: rgba(74, 144, 217, 0.45);
+}
+
+/* ---- Tool palette extras ------------------------------------------------------ */
+
+.tool-sep {
+    height: 1px;
+    margin: 2px 4px;
+    background: var(--border);
+}
+
+/* ---- Rulers around the canvas ---------------------------------------------- */
+
+.canvas-area {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-rows: 20px minmax(0, 1fr);
+}
+
+.canvas-area .canvas-wrap {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    min-height: 0;
+}
+
+.ruler-corner {
+    background: var(--surface2);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    border-top-left-radius: var(--radius);
+}
+
+.ruler {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--surface2);
+    touch-action: none;
+}
+
+.ruler-h {
+    grid-column: 2;
+    grid-row: 1;
+    cursor: row-resize;
+    border-bottom: 1px solid var(--border);
+}
+
+.ruler-v {
+    grid-column: 1;
+    grid-row: 2;
+    cursor: col-resize;
+    border-right: 1px solid var(--border);
+}
+
+.guide-line {
+    stroke: #00b4d8;
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+.guide-hit {
+    stroke: transparent;
+    stroke-width: 8;
+    cursor: move;
+}
+
+/* ---- Node editing, pen drafts, measurements --------------------------------- */
+
+.node-outline {
+    fill: none;
+    stroke: #4a90d9;
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+.node-handle {
+    fill: #ffffff;
+    stroke: #4a90d9;
+    stroke-width: 1.5;
+    cursor: move;
+}
+
+.node-handle.smooth {
+    rx: 50%;
+}
+
+.node-handle.selected {
+    fill: #4a90d9;
+}
+
+.node-handle.first {
+    stroke: #ff3fb0;
+}
+
+.bez-line {
+    stroke: #4a90d9;
+    stroke-width: 1;
+    stroke-dasharray: 3 2;
+    pointer-events: none;
+}
+
+.bez-handle {
+    fill: #4a90d9;
+    stroke: #ffffff;
+    stroke-width: 1;
+    cursor: pointer;
+}
+
+.draft {
+    pointer-events: none;
+}
+
+.measure {
+    fill: #1b1f2b;
+    paint-order: stroke;
+    stroke: #ffffff;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    font-family: sans-serif;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.shape-el.preview {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+/* ---- Arrange panel ------------------------------------------------------------- */
+
+.arrange-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.arrange-panel[hidden] {
+    display: none;
+}
+
+.arrange-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+}
+
+.arrange-row {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+}
+
+.arrange-row.wide {
+    grid-template-columns: 1fr 1fr;
+}
+
+.arrange-btn {
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.arrange-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--surface);
+}
+
+/* ---- Dialogs ------------------------------------------------------------------- */
+
+.pnp-dialog {
+    width: min(420px, calc(100vw - 32px));
+    padding: 20px 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 20px 60px var(--shadow);
+}
+
+.pnp-dialog::backdrop {
+    background: rgba(10, 12, 20, 0.35);
+}
+
+.pnp-dialog h2 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+}
+
+.pnp-dialog [hidden] {
+    display: none;
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+/* Anything hidden in the editor stays hidden, whatever its layout class. */
+.editor-page [hidden] {
+    display: none !important;
+}
+
+.arrange-title .input-hint {
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+}
+
+/* ---- Host containers ------------------------------------------------------------ */
+
+/* The element passed as `stage` grows to fill the main column. */
+.editor-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
