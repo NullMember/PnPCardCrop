@@ -1,0 +1,268 @@
+/* PnPTools shared runtime UI — canonical copy lives in the hub's shared/
+   folder and is copied into every tool by scripts/sync-shared.sh.
+   Builds on the CSS variables defined by each tool's style.css. */
+
+/* ---- Top bar ------------------------------------------------------------ */
+
+.pnp-topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: -6px 0 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+}
+
+.pnp-topbar a {
+    text-decoration: none;
+}
+
+.pnp-home {
+    font-weight: 700;
+    color: var(--accent-hover);
+    white-space: nowrap;
+}
+
+.pnp-home:hover {
+    color: var(--text);
+}
+
+.pnp-tools {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.pnp-tool {
+    padding: 4px 10px;
+    border-radius: 999px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.pnp-tool:hover {
+    color: var(--text);
+    background: var(--surface2);
+}
+
+.pnp-tool.current {
+    color: var(--text);
+    background: var(--surface2);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.pnp-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pnp-topbar button {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+}
+
+.pnp-topbar button:hover:not(:disabled) {
+    background: var(--surface2);
+    color: var(--text);
+    border-color: var(--accent);
+    filter: none;
+}
+
+/* Also used on the hub page, outside .pnp-topbar, so it is fully styled here. */
+.pnp-theme-toggle {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.pnp-theme-toggle:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.pnp-units {
+    display: inline-flex;
+    margin-right: 6px;
+}
+
+.pnp-units button {
+    border-radius: 0;
+}
+
+.pnp-units button:first-child {
+    border-radius: 6px 0 0 6px;
+}
+
+.pnp-units button:last-child {
+    border-radius: 0 6px 6px 0;
+    border-left: none;
+}
+
+.pnp-units button[aria-pressed="true"],
+.pnp-units button[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+@media (max-width: 640px) {
+    .pnp-tools {
+        order: 3;
+        flex-basis: 100%;
+    }
+}
+
+/* ---- Unit proxy inputs --------------------------------------------------- */
+
+.pnp-unit-real {
+    display: none !important;
+}
+
+/* ---- Send to / Import ---------------------------------------------------- */
+
+.pnp-send {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.pnp-send-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-right: 2px;
+}
+
+.pnp-send .btn-small,
+.pnp-import .btn-small {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+}
+
+.pnp-import {
+    position: relative;
+    margin-top: 8px;
+}
+
+.pnp-import > .btn-small {
+    width: 100%;
+}
+
+.pnp-popover {
+    position: absolute;
+    z-index: 50;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 30px var(--shadow);
+    padding: 4px;
+}
+
+.pnp-popover[hidden] {
+    display: none;
+}
+
+.pnp-popover-row {
+    display: flex;
+    align-items: stretch;
+}
+
+.pnp-popover-item {
+    flex: 1;
+    display: block;
+    text-align: left;
+    padding: 8px 10px;
+    background: none;
+    color: var(--text);
+    font-weight: 400;
+    font-size: 0.8rem;
+    border-radius: 6px;
+}
+
+.pnp-popover-item span {
+    color: var(--text-dim);
+}
+
+.pnp-popover-item:hover {
+    background: var(--surface);
+}
+
+.pnp-popover-remove {
+    padding: 0 10px;
+    background: none;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+}
+
+.pnp-popover-remove:hover {
+    color: var(--danger);
+}
+
+.pnp-popover-empty {
+    padding: 10px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+/* ---- Toasts ------------------------------------------------------------- */
+
+.pnp-toasts {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - 32px));
+}
+
+.pnp-toast {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--info);
+    color: var(--text);
+    font-size: 0.85rem;
+    box-shadow: 0 8px 24px var(--shadow);
+    transition: opacity 0.4s, transform 0.4s;
+}
+
+.pnp-toast.success { border-left-color: var(--success); }
+.pnp-toast.error { border-left-color: var(--danger); }
+
+.pnp-toast.leaving {
+    opacity: 0;
+    transform: translateY(8px);
+}
+
+/* ---- Keyboard focus for shared dropzones -------------------------------- */
+
+.dropzone:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}

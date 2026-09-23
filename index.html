@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PnP Card Cropper</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/tool.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="shared/icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#1a1d27">
+  <script src="shared/pnp-theme.js"></script>
+  <link rel="stylesheet" href="shared/pnp-shared.css">
 </head>
 <body>
   <div class="container">
@@ -19,18 +25,26 @@
           <!-- File Upload Section -->
           <div class="panel">
             <div class="panel-title">PDF File</div>
-            <div class="control-group">
-              <label for="pdfFile">PDF File</label>
-              <input type="file" id="pdfFile" accept="application/pdf" />
+            <div class="dropzone" id="pdfDropZone">
+              <div class="dz-title">Drag &amp; drop a PDF here</div>
+              <div>or click to browse</div>
+              <input type="file" id="pdfFile" accept="application/pdf" hidden />
             </div>
+            <div class="dropzone-count" id="pdfFileName"></div>
           </div>
 
           <!-- Page Selection Section -->
           <div class="panel">
-            <div class="panel-title">Starting Page</div>
-            <div class="control-group">
-              <label for="startingPage">Starting Page</label>
-              <input type="number" id="startingPage" value="1" min="1" />
+            <div class="panel-title">Pages</div>
+            <div class="row">
+              <div class="control-group">
+                <label for="startingPage">First page</label>
+                <input type="number" id="startingPage" value="1" min="1" />
+              </div>
+              <div class="control-group">
+                <label for="endPage">Last page</label>
+                <input type="number" id="endPage" value="" min="1" placeholder="end" />
+              </div>
             </div>
           </div>
 
@@ -79,20 +93,16 @@
             <div class="panel-title">Page Size <span class="help" tabindex="0" data-tip="The size of each PDF page you're cropping cards out of — not the output card size.">?</span></div>
             <div class="control-group">
               <label for="pageSizePreset">Preset</label>
-              <select id="pageSizePreset">
-                <option value="a4">A4 (210 × 297 mm)</option>
-                <option value="letter">US Letter (215.9 × 279.4 mm)</option>
-                <option value="custom">Custom</option>
-              </select>
+              <select id="pageSizePreset"></select>
             </div>
             <div class="row">
               <div class="control-group">
                 <label for="pageWidth">Width (mm)</label>
-                <input type="number" id="pageWidth" value="210" min="1" step="0.1" />
+                <input type="number" id="pageWidth" value="210" min="1" step="0.1" data-unit="mm" />
               </div>
               <div class="control-group">
                 <label for="pageHeight">Height (mm)</label>
-                <input type="number" id="pageHeight" value="297" min="1" step="0.1" />
+                <input type="number" id="pageHeight" value="297" min="1" step="0.1" data-unit="mm" />
               </div>
             </div>
           </div>
@@ -102,24 +112,16 @@
             <div class="panel-title">Card Size</div>
             <div class="control-group">
               <label for="cardSizePreset">Preset</label>
-              <select id="cardSizePreset">
-                <option value="poker">Poker (63 × 88 mm)</option>
-                <option value="bridge">Bridge (58 × 91 mm)</option>
-                <option value="miniAmerican">Mini American (41 × 63 mm)</option>
-                <option value="miniEuropean">Mini European (44 × 68 mm)</option>
-                <option value="tarot">Tarot (70 × 121 mm)</option>
-                <option value="square">Square (70 × 70 mm)</option>
-                <option value="custom">Custom</option>
-              </select>
+              <select id="cardSizePreset"></select>
             </div>
             <div class="row">
               <div class="control-group">
                 <label for="cardWidth">Width (mm)</label>
-                <input type="number" id="cardWidth" value="63" min="1" step="0.1" />
+                <input type="number" id="cardWidth" value="63" min="1" step="0.1" data-unit="mm" />
               </div>
               <div class="control-group">
                 <label for="cardHeight">Height (mm)</label>
-                <input type="number" id="cardHeight" value="88" min="1" step="0.1" />
+                <input type="number" id="cardHeight" value="88" min="1" step="0.1" data-unit="mm" />
               </div>
             </div>
           </div>
@@ -141,16 +143,39 @@
 
           <!-- Card Spacing Section -->
           <div class="panel">
-            <div class="panel-title">Card Spacing</div>
+            <div class="panel-title">Card Spacing &amp; Position <span class="help" tabindex="0" data-tip="The grid starts centred on the page. Offsets move it (right / down); on duplex back pages the offset is mirrored automatically. You can also switch the preview to “Move grid” and drag it.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="rowSpacing">Row Spacing (mm)</label>
-                <input type="number" id="rowSpacing" value="0" min="0" step="0.1" />
+                <input type="number" id="rowSpacing" value="0" min="0" step="0.1" data-unit="mm" />
               </div>
               <div class="control-group">
                 <label for="columnSpacing">Column Spacing (mm)</label>
-                <input type="number" id="columnSpacing" value="0" min="0" step="0.1" />
+                <input type="number" id="columnSpacing" value="0" min="0" step="0.1" data-unit="mm" />
               </div>
+            </div>
+            <div class="row">
+              <div class="control-group">
+                <label for="offsetX">Grid offset X (mm)</label>
+                <input type="number" id="offsetX" value="0" step="0.1" data-unit="mm" />
+              </div>
+              <div class="control-group">
+                <label for="offsetY">Grid offset Y (mm)</label>
+                <input type="number" id="offsetY" value="0" step="0.1" data-unit="mm" />
+              </div>
+            </div>
+            <button type="button" class="btn-secondary btn-small" id="centerOnArtBtn">Center grid on artwork</button>
+          </div>
+
+          <!-- Output Format -->
+          <div class="panel">
+            <div class="panel-title">Image Format</div>
+            <div class="control-group">
+              <select id="outputFormat">
+                <option value="png">PNG (lossless)</option>
+                <option value="jpeg">JPEG (smaller)</option>
+                <option value="webp">WebP (smallest)</option>
+              </select>
             </div>
           </div>
 
@@ -161,10 +186,31 @@
       </div>
 
       <div class="main">
-        <div class="preview-section">
-          <div class="preview-title">Preview</div>
-          <div class="preview-canvas-container">
-            <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+        <div class="preview-row">
+          <div class="preview-section">
+            <div class="preview-toolbar">
+              <div class="preview-title">Preview</div>
+              <div class="preview-pager">
+                <button type="button" class="btn-secondary btn-small" id="prevPageBtn" aria-label="Previous page" disabled>‹</button>
+                <span id="previewPageLabel">No PDF loaded</span>
+                <button type="button" class="btn-secondary btn-small" id="nextPageBtn" aria-label="Next page" disabled>›</button>
+              </div>
+              <div class="segmented" id="dragMode" role="group" aria-label="Dragging on the preview">
+                <button type="button" data-mode="detail" aria-pressed="true">Move detail box</button>
+                <button type="button" data-mode="grid" aria-pressed="false">Move grid</button>
+              </div>
+            </div>
+            <div class="preview-canvas-container">
+              <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+            </div>
+          </div>
+
+          <div class="preview-section detail-section">
+            <div class="preview-title">Detail (4×)</div>
+            <div class="preview-canvas-container">
+              <canvas id="zoomCanvas" width="400" height="400"></canvas>
+            </div>
+            <div class="input-hint">With “Move detail box”, click or drag on the preview to choose what to magnify — the detail view stays put while you tweak the grid.</div>
           </div>
         </div>
 
@@ -176,14 +222,15 @@
           <a id="downloadFrontLink" download="front_cards.zip" class="download-link btn btn-success">⬇️ Download Front Cards (ZIP)</a>
           <a id="downloadBackLink" download="back_cards.zip" class="download-link btn btn-success">⬇️ Download Back Cards (ZIP)</a>
         </div>
+        <div id="sendSlot"></div>
       </div>
     </div>
   </div>
 
-  <canvas id="zoomCanvas" width="400" height="200" style="display:none"></canvas>
-  <script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
-  <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
-  <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="shared/pnp-shared.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

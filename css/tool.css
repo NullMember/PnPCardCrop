@@ -1,0 +1,96 @@
+/* PnPCardCrop-only styles. The shared base lives in style.css (synced from the hub). */
+
+/* ---- PnPCardCrop: preview + docked detail view ------------------------- */
+
+.preview-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+}
+
+.detail-section {
+    position: sticky;
+    top: 20px;
+}
+
+#previewCanvas {
+    cursor: crosshair;
+}
+
+#zoomCanvas {
+    width: 100%;
+    height: auto;
+    background: #fff;
+    image-rendering: pixelated;
+}
+
+@media (max-width: 1024px) {
+    .preview-row {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-section {
+        position: static;
+    }
+}
+
+#previewCanvas {
+    touch-action: none;
+}
+
+/* ---- PnPCardCrop: preview toolbar --------------------------------------------- */
+
+.preview-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.preview-pager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.preview-pager .btn-small {
+    padding: 4px 12px;
+    font-size: 1rem;
+}
+
+.segmented {
+    display: inline-flex;
+}
+
+.segmented button {
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 0;
+}
+
+.segmented button:first-child {
+    border-radius: 6px 0 0 6px;
+}
+
+.segmented button:last-child {
+    border-radius: 0 6px 6px 0;
+    border-left: none;
+}
+
+.segmented button[aria-pressed="true"],
+.segmented button[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+#previewCanvas.drag-grid {
+    cursor: move;
+}

@@ -14,66 +14,81 @@ let scale = 1;
 let pdfRendered = false;
 let page = null;
 let previewImage = null;
-// Zoom variables
-let startX, startY, zoomX = 0, zoomY = 0;
+// Detail view: a ZOOM_FACTOR magnification of the blue box on the preview.
+// zoomX/zoomY are the box's top-left corner, in preview-canvas pixels.
+const ZOOM_FACTOR = 4;
+let zoomX = 0, zoomY = 0;
 let isDragging = false;
 
 // 1mm = 72/25.4 pt (the native PDF unit)
 const MM_TO_PT = 72 / 25.4;
 const PT_TO_MM = 25.4 / 72;
 
-const PAGE_PRESETS = {
-    a4: { w: 210, h: 297 },
-    letter: { w: 215.9, h: 279.4 },
-};
+let pdfFile = null;   // the loaded File, kept for project saving
+let lastCrop = null;  // { front: [{ name, blob }], back: [...] } from the last Crop run
 
-const CARD_PRESETS = {
-    poker: { w: 63, h: 88 },
-    bridge: { w: 58, h: 91 },
-    miniAmerican: { w: 41, h: 63 },
-    miniEuropean: { w: 44, h: 68 },
-    tarot: { w: 70, h: 121 },
-    square: { w: 70, h: 70 },
-};
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// Load the uploaded PDF using pdf.js
-document.getElementById('pdfFile').addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    if (file) {
-        const fileReader = new FileReader();
-        fileReader.onload = async function () {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.mjs';
-            // Load the PDF file using pdf.js for rendering page previews
-            const pdfData = new Uint8Array(this.result);
-            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-            pdf = await loadingTask.promise;
+const PREVIEW_BOX_W = 1080;
+const PREVIEW_BOX_H = 1528;
 
-            const startingPage = parseInt(document.getElementById('startingPage').value, 10) || 1;
+// Load a PDF: pdf.js renders the previews, pdf-lib provides page geometry for cropping
+async function loadPdf(file) {
+    const pdfBytes = await file.arrayBuffer();
+    // pdf.js may transfer (detach) the buffer it is given, so hand it a copy
+    pdf = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) }).promise;
+    pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
+    pdfFile = file;
+    document.getElementById('pdfFileName').textContent = `${file.name} · ${pdf.numPages} page(s)`;
 
-            await autoDetectPageSize(startingPage);
+    const startingPageInput = document.getElementById('startingPage');
+    startingPageInput.max = pdf.numPages;
+    const startingPage = Math.min(parseInt(startingPageInput.value, 10) || 1, pdf.numPages);
+    startingPageInput.value = startingPage;
 
-            // Render the first page of the PDF
-            await renderPage(pdf, startingPage);
-
-            // Store the loaded PDF for cropping using PDFLib
-            const pdfBytes = await file.arrayBuffer();
-            pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
-
-            // Draw the grid after rendering the PDF
-            renderPreview();
-        };
-        fileReader.readAsArrayBuffer(file);
-    }
-});
+    await autoDetectPageSize(startingPage);
+    await showPreviewPage(startingPage);
+}
 
 document.getElementById('startingPage').addEventListener('input', async (event) => {
     if (!pdfDoc) return;
 
-    const startingPage = parseInt(event.target.value, 10) || 1;
+    const startingPage = Math.min(parseInt(event.target.value, 10) || 1, pdf.numPages);
     await autoDetectPageSize(startingPage);
-    await renderPage(pdf, startingPage);
-    renderPreview();
+    await showPreviewPage(startingPage);
 });
+
+// ---- Preview page navigation ----
+
+let previewPage = 1;
+
+async function showPreviewPage(pageNumber) {
+    if (!pdf) return;
+    previewPage = Math.max(1, Math.min(pageNumber, pdf.numPages));
+    await renderPage(pdf, previewPage);
+    renderPreview();
+    updatePager();
+}
+
+function updatePager() {
+    const label = document.getElementById('previewPageLabel');
+    if (!pdf) return;
+    const layout = currentLayout();
+    let role = '';
+    if (isBackPageNumber(previewPage)) role = ' · back (mirrored grid)';
+    else if (layout === 'back_last' && previewPage === (parseInt(document.getElementById('endPage').value, 10) || pdf.numPages)) role = ' · backs';
+    label.textContent = `Page ${previewPage} of ${pdf.numPages}${role}`;
+    document.getElementById('prevPageBtn').disabled = previewPage <= 1;
+    document.getElementById('nextPageBtn').disabled = previewPage >= pdf.numPages;
+}
+
+document.getElementById('prevPageBtn').addEventListener('click', () => showPreviewPage(previewPage - 1));
+document.getElementById('nextPageBtn').addEventListener('click', () => showPreviewPage(previewPage + 1));
+document.querySelectorAll('input[name="page_layout"]').forEach((radio) => radio.addEventListener('change', () => {
+    renderPreview();
+    updatePager();
+}));
+document.getElementById('endPage').addEventListener('input', updatePager);
 
 // Detect the page size (in mm) from the loaded PDF and select the matching preset
 async function autoDetectPageSize(pageNumber) {
@@ -83,65 +98,25 @@ async function autoDetectPageSize(pageNumber) {
     const viewport = nativePage.getViewport({ scale: 1 });
     const wMM = viewport.width * PT_TO_MM;
     const hMM = viewport.height * PT_TO_MM;
-    const ratio = Math.max(wMM, hMM) / Math.min(wMM, hMM);
 
-    let bestKey = 'custom';
-    let bestDiff = Infinity;
-    for (const [key, preset] of Object.entries(PAGE_PRESETS)) {
-        const presetRatio = Math.max(preset.w, preset.h) / Math.min(preset.w, preset.h);
-        const diff = Math.abs(ratio - presetRatio);
-        if (diff < bestDiff) {
-            bestDiff = diff;
-            bestKey = key;
-        }
-    }
-    if (bestDiff > 0.05) bestKey = 'custom';
-
-    pageSizePresetSelect.value = bestKey;
-    pageWidthInput.value = wMM.toFixed(1);
-    pageHeightInput.value = hMM.toFixed(1);
+    // Snap to a known paper size when the PDF is within 1 mm of it
+    const known = PnP.presets.paper.find((p) => Math.abs(p.w - wMM) < 1 && Math.abs(p.h - hMM) < 1);
+    pageWidthInput.value = known ? known.w : wMM.toFixed(1);
+    pageHeightInput.value = known ? known.h : hMM.toFixed(1);
+    pagePreset.sync();
 }
 
-// Page size preset handling
-pageSizePresetSelect.addEventListener('change', () => {
-    const key = pageSizePresetSelect.value;
-    if (key === 'custom') return;
-    const preset = PAGE_PRESETS[key];
-    const currentPortrait = parseFloat(pageWidthInput.value) <= parseFloat(pageHeightInput.value);
-    const w = Math.min(preset.w, preset.h);
-    const h = Math.max(preset.w, preset.h);
-    pageWidthInput.value = currentPortrait ? w : h;
-    pageHeightInput.value = currentPortrait ? h : w;
-    renderPreview();
-});
+// Shared presets keep the selects and the mm inputs in sync
+const pagePreset = PnP.bindPreset(pageSizePresetSelect, pageWidthInput, pageHeightInput, 'paper');
+PnP.bindPreset(cardSizePresetSelect, cardWidthInput, cardHeightInput, 'card');
 
-[pageWidthInput, pageHeightInput].forEach((el) => {
-    el.addEventListener('input', () => {
-        pageSizePresetSelect.value = 'custom';
-        renderPreview();
-    });
-});
-
-// Card size preset handling
-cardSizePresetSelect.addEventListener('change', () => {
-    const key = cardSizePresetSelect.value;
-    if (key === 'custom') return;
-    const preset = CARD_PRESETS[key];
-    cardWidthInput.value = preset.w;
-    cardHeightInput.value = preset.h;
-    renderPreview();
-});
-
-[cardWidthInput, cardHeightInput].forEach((el) => {
-    el.addEventListener('input', () => {
-        cardSizePresetSelect.value = 'custom';
-        renderPreview();
-    });
+[pageWidthInput, pageHeightInput, cardWidthInput, cardHeightInput].forEach((el) => {
+    el.addEventListener('input', renderPreview);
 });
 
 // Add event listeners for live preview updates
 [
-    'rows', 'columns', 'rowSpacing', 'columnSpacing',
+    'rows', 'columns', 'rowSpacing', 'columnSpacing', 'offsetX', 'offsetY',
 ].forEach((id) => {
     document.getElementById(id).addEventListener('input', renderPreview);
 });
@@ -150,13 +125,12 @@ async function renderPage(pdf, pageNumber) {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
 
-    // Set canvas size
-    scale = Math.min(previewCanvas.width / viewport.width, previewCanvas.height / viewport.height);
+    // Fit the page into a fixed box, so mixed portrait/landscape pages keep full size
+    scale = Math.min(PREVIEW_BOX_W / viewport.width, PREVIEW_BOX_H / viewport.height);
     const scaledViewport = page.getViewport({ scale: scale });
     previewCanvas.width = scaledViewport.width;
     previewCanvas.height = scaledViewport.height;
-    zoomCanvas.width = scaledViewport.width / 5;
-    zoomCanvas.height = scaledViewport.height / 5;
+    clampZoomRect();
 
     // Render page into canvas
     const context = previewCanvas.getContext('2d');
@@ -190,16 +164,16 @@ async function renderPreview() {
 
     // Draw the grid
     drawGrid(context, rows, columns, cardWidthMM, cardHeightMM, rowSpacingMM, columnSpacingMM);
-    // Draw the blue zoom rect
-    // Zoom rect is /4 of the size of the preview canvas because were zooming in 4x
-    drawZoomRect(context, zoomX, zoomY, zoomCanvas.width / 4, zoomCanvas.height / 4);
-
-    // Draw the zoomed in area
-    let zoomCtx = zoomCanvas.getContext("2d");
-    zoomCtx.fillStyle = "white";
+    // Copy the magnified area before the blue box is drawn over it
+    const zoomW = zoomCanvas.width / ZOOM_FACTOR;
+    const zoomH = zoomCanvas.height / ZOOM_FACTOR;
+    const zoomCtx = zoomCanvas.getContext('2d');
+    zoomCtx.imageSmoothingEnabled = false;
+    zoomCtx.fillStyle = 'white';
     zoomCtx.fillRect(0, 0, zoomCanvas.width, zoomCanvas.height);
-    // 4x zoom
-    zoomCtx.drawImage(previewCanvas, zoomX, zoomY, 100, 100, 0, 0, 400, 400);
+    zoomCtx.drawImage(previewCanvas, zoomX, zoomY, zoomW, zoomH, 0, 0, zoomCanvas.width, zoomCanvas.height);
+
+    drawZoomRect(context, zoomX, zoomY, zoomW, zoomH);
 }
 
 // Function to draw the grid, centered on the page
@@ -216,8 +190,10 @@ function drawGrid(context, rows, columns, cardWidthMM, cardHeightMM, rowSpacingM
 
     const gridWidth = columns * cardWidth + (columns - 1) * columnSpacing;
     const gridHeight = rows * cardHeight + (rows - 1) * rowSpacing;
-    const marginX = (previewCanvas.width - gridWidth) / 2;
-    const marginY = (previewCanvas.height - gridHeight) / 2;
+    // Same offset (and back-page mirroring) as the actual crop
+    const off = gridOffsetMm(isBackPageNumber(previewPage), previewCanvas.width / scale, previewCanvas.height / scale);
+    const marginX = (previewCanvas.width - gridWidth) / 2 + off.x * pxPerMM;
+    const marginY = (previewCanvas.height - gridHeight) / 2 + off.y * pxPerMM;
 
     for (let col = 0; col < columns; col++) {
         const xStart = marginX + col * (cardWidth + columnSpacing);
@@ -258,35 +234,141 @@ function drawZoomRect(context, x, y, width, height) {
     context.stroke();
 }
 
-previewCanvas.addEventListener("mousedown", function(e) {
-    isDragging = true;
-    startX = e.offsetX;
-    startY = e.offsetY;
-});
+function clampZoomRect() {
+    const zoomW = zoomCanvas.width / ZOOM_FACTOR;
+    const zoomH = zoomCanvas.height / ZOOM_FACTOR;
+    zoomX = Math.max(0, Math.min(zoomX, previewCanvas.width - zoomW));
+    zoomY = Math.max(0, Math.min(zoomY, previewCanvas.height - zoomH));
+}
 
-previewCanvas.addEventListener("mouseup", function() {
-    isDragging = false;
-});
-
-previewCanvas.addEventListener("mousemove", function(e){
-    if (isDragging) {
-        zoomX += (e.offsetX - startX);
-        zoomY += (e.offsetY - startY);
-        startX = (e.offsetX);
-        startY = (e.offsetY);
-    }
-
-    zoomCanvas.style.top = e.pageY + 20 + "px"
-    zoomCanvas.style.left = e.pageX + 20 + "px"
-    zoomCanvas.style.display = "block";
-
+// Centre the blue box on the pointer. The canvas is scaled down by CSS, so
+// convert from on-screen pixels to canvas pixels first.
+function moveZoomRectTo(e) {
+    const rect = previewCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (previewCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (previewCanvas.height / rect.height);
+    zoomX = x - zoomCanvas.width / ZOOM_FACTOR / 2;
+    zoomY = y - zoomCanvas.height / ZOOM_FACTOR / 2;
+    clampZoomRect();
     renderPreview();
+}
+
+// ---- Dragging on the preview: detail box or grid ----
+
+let dragMode = 'detail';
+let gridDrag = null;
+
+document.getElementById('dragMode').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn) return;
+    dragMode = btn.dataset.mode;
+    document.querySelectorAll('#dragMode button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    previewCanvas.classList.toggle('drag-grid', dragMode === 'grid');
 });
 
-previewCanvas.addEventListener("mouseout", function(){
-    //zoomCanvas.style.display = "none";
+function setOffsets(x, y) {
+    const round = (v) => Math.round(v * 10) / 10;
+    [['offsetX', x], ['offsetY', y]].forEach(([id, v]) => {
+        const el = document.getElementById(id);
+        el.value = round(v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+}
+
+// Screen movement -> offset change. On a mirrored back page the grid moves
+// opposite to the stored (front-page) offset along the mirrored axis.
+function applyGridDrag(e) {
+    const rect = previewCanvas.getBoundingClientRect();
+    const mmPerScreenPx = (previewCanvas.width / rect.width) / (scale * MM_TO_PT);
+    let dx = (e.clientX - gridDrag.x) * mmPerScreenPx;
+    let dy = (e.clientY - gridDrag.y) * mmPerScreenPx;
+    if (isBackPageNumber(previewPage)) {
+        if (backFlipsLeftRight(previewCanvas.width / scale, previewCanvas.height / scale)) dx = -dx;
+        else dy = -dy;
+    }
+    setOffsets(gridDrag.offX + dx, gridDrag.offY + dy);
+}
+
+previewCanvas.addEventListener('pointerdown', (e) => {
+    if (!pdfRendered) return;
+    isDragging = true;
+    previewCanvas.setPointerCapture(e.pointerId);
+    if (dragMode === 'grid') {
+        gridDrag = { x: e.clientX, y: e.clientY, offX: mmValue('offsetX'), offY: mmValue('offsetY') };
+    } else {
+        moveZoomRectTo(e);
+    }
+});
+
+previewCanvas.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    if (dragMode === 'grid') applyGridDrag(e);
+    else moveZoomRectTo(e);
+});
+
+previewCanvas.addEventListener('pointerup', () => {
     isDragging = false;
 });
+
+previewCanvas.addEventListener('pointercancel', () => {
+    isDragging = false;
+});
+
+// Add a cropped card to its zip and remember it for "Send to"
+function recordCard(zip, list, name, blob) {
+    zip.file(name, blob);
+    list.push({ name, blob });
+}
+
+function currentLayout() {
+    return document.querySelector('input[name="page_layout"]:checked').value;
+}
+
+function mmValue(id) {
+    return parseFloat(document.getElementById(id).value) || 0;
+}
+
+// Grid offset (mm, +x right, +y down). Duplex back pages are mirror images
+// of their front page, so the offset is mirrored with them.
+// Whether a duplex back page is the front mirrored left-right (true) or
+// top-bottom (false). Printers turn landscape pages 90° onto portrait paper,
+// so a long-edge flip is left-right only for portrait pages.
+function backFlipsLeftRight(width, height) {
+    const portrait = width <= height;
+    return (currentLayout() === 'duplex') === portrait;
+}
+
+function gridOffsetMm(isBackPage, width, height) {
+    let x = mmValue('offsetX');
+    let y = mmValue('offsetY');
+    if (isBackPage) {
+        if (backFlipsLeftRight(width, height)) x = -x;
+        else y = -y;
+    }
+    return { x, y };
+}
+
+// Bottom-left corner of the card grid in PDF points (origin bottom-left).
+function gridMarginsPt(width, height, gridWidth, gridHeight, isBackPage) {
+    const off = gridOffsetMm(isBackPage, width, height);
+    return {
+        marginX: (width - gridWidth) / 2 + off.x * MM_TO_PT,
+        marginY: (height - gridHeight) / 2 - off.y * MM_TO_PT,
+    };
+}
+
+// Is this page (1-based) a back page under the current layout?
+function isBackPageNumber(pageNumber) {
+    const layout = currentLayout();
+    const first = parseInt(document.getElementById('startingPage').value, 10) || 1;
+    return (layout === 'duplex' || layout === 'duplex_short') && (pageNumber - first) % 2 === 1;
+}
+
+const OUTPUT_FORMATS = {
+    png: { type: 'image/png', ext: 'png' },
+    jpeg: { type: 'image/jpeg', ext: 'jpg' },
+    webp: { type: 'image/webp', ext: 'webp' },
+};
 
 // Form submission for cropping the PDF
 cropForm.addEventListener('submit', async (event) => {
@@ -325,8 +407,16 @@ cropForm.addEventListener('submit', async (event) => {
 
     const frontZip = new JSZip();
     const backZip = new JSZip();
+    lastCrop = { front: [], back: [] };
+    sendMenu.setEnabled(false);
 
-    const pdfLibPages = pdfDoc.getPages().slice(startingPage - 1);
+    const endPage = parseInt(document.getElementById('endPage').value, 10) || pdfDoc.getPageCount();
+    if (endPage < startingPage) {
+        alert('The last page must not be before the first page.');
+        return;
+    }
+    const pdfLibPages = pdfDoc.getPages().slice(startingPage - 1, endPage);
+    const fmt = OUTPUT_FORMATS[document.getElementById('outputFormat').value] || OUTPUT_FORMATS.png;
     let currentPage = 0;
     let cardCount = 0;
     let frontCardCount = 0;
@@ -346,8 +436,7 @@ cropForm.addEventListener('submit', async (event) => {
         const cropCells = async (pageIndexInDoc) => {
             const pdfLibPage = pdfLibPages[pageIndexInDoc];
             const { width, height } = pdfLibPage.getSize();
-            const marginX = (width - gridWidth) / 2;
-            const marginY = (height - gridHeight) / 2;
+            const { marginX, marginY } = gridMarginsPt(width, height, gridWidth, gridHeight, false);
 
             const pdfPage = await pdf.getPage(startingPage + pageIndexInDoc);
             const viewport = pdfPage.getViewport({ scale: dpiScale });
@@ -394,9 +483,9 @@ cropForm.addEventListener('submit', async (event) => {
                 pageRenderPromises.push(
                     new Promise(resolve => {
                         frontCanvas.toBlob((blob) => {
-                            frontZip.file(`front_${String(currentIndex).padStart(4, '0')}.png`, blob);
+                            recordCard(frontZip, lastCrop.front, `front_${String(currentIndex).padStart(4, '0')}.${fmt.ext}`, blob);
                             resolve();
-                        }, 'image/png');
+                        }, fmt.type, 0.95);
                     })
                 );
 
@@ -404,9 +493,9 @@ cropForm.addEventListener('submit', async (event) => {
                 pageRenderPromises.push(
                     new Promise(resolve => {
                         backCanvas.toBlob((blob) => {
-                            backZip.file(`back_${String(currentIndex).padStart(4, '0')}.png`, blob);
+                            recordCard(backZip, lastCrop.back, `back_${String(currentIndex).padStart(4, '0')}.${fmt.ext}`, blob);
                             resolve();
-                        }, 'image/png');
+                        }, fmt.type, 0.95);
                     })
                 );
                 cardCount++;
@@ -422,8 +511,8 @@ cropForm.addEventListener('submit', async (event) => {
         // Center the card grid on the page
         const gridWidth = columns * cardWidth + (columns - 1) * columnSpacing;
         const gridHeight = rows * cardHeight + (rows - 1) * rowSpacing;
-        const marginX = (width - gridWidth) / 2;
-        const marginY = (height - gridHeight) / 2;
+        const isBackPage = (isDuplex || isDuplexShort) && pageIndex % 2 === 1;
+        const { marginX, marginY } = gridMarginsPt(width, height, gridWidth, gridHeight, isBackPage);
 
         // Use pdf.js to render the page at native resolution
         const pdfPage = await pdf.getPage(startingPage + pageIndex);
@@ -472,78 +561,54 @@ cropForm.addEventListener('submit', async (event) => {
                     pageRenderPromises.push(
                         new Promise(resolve => {
                             canvas.toBlob((blob) => {
-                                frontZip.file(`card_${String(currentCardCount).padStart(4, '0')}.png`, blob);
+                                recordCard(frontZip, lastCrop.front, `card_${String(currentCardCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                 resolve();
-                            }, 'image/png');
+                            }, fmt.type, 0.95);
                         })
                     );
                     cardCount++;
                 }
-                else if (isDuplex) {
+                else if (isDuplex || isDuplexShort) {
                     if (pageIndex % 2 === 0) {
                         const currentFrontCount = frontCardCount;
                         pageRenderPromises.push(
                             new Promise(resolve => {
                                 canvas.toBlob((blob) => {
-                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    recordCard(frontZip, lastCrop.front, `front_${String(currentFrontCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         frontCardCount++;
                     }
                     else {
-                        const x0Back = marginX + ((columns - 1) - col) * (cardWidth + columnSpacing);
-                        const scaledXBack = x0Back * scaleRatioX;
+                        // The back of front card (row, col) sits at the mirrored position:
+                        // mirrored column when the sheet turns left-right (backs upright),
+                        // mirrored row when it turns top-bottom (backs upside down).
+                        const leftRight = backFlipsLeftRight(width, height);
+                        const xBack = leftRight ? marginX + ((columns - 1) - col) * (cardWidth + columnSpacing) : x0;
+                        const yBack = leftRight ? y0 : marginY + ((rows - 1) - row) * (cardHeight + rowSpacing);
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
-                        const currentBackCount = backCardCount;
-                        pageRenderPromises.push(
-                            new Promise(resolve => {
-                                canvas.toBlob((blob) => {
-                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
-                                    resolve();
-                                }, 'image/png');
-                            })
-                        );
-                        backCardCount++;
-                    }
-                }
-                else if (isDuplexShort) {
-                    if (pageIndex % 2 === 0) {
-                        const currentFrontCount = frontCardCount;
-                        pageRenderPromises.push(
-                            new Promise(resolve => {
-                                canvas.toBlob((blob) => {
-                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
-                                    resolve();
-                                }, 'image/png');
-                            })
-                        );
-                        frontCardCount++;
-                    }
-                    else {
-                        const x0Back = marginX + ((columns - 1) - col) * (cardWidth + columnSpacing);
-                        const scaledXBack = x0Back * scaleRatioX;
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(pageCanvas, scaledXBack, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(pageCanvas, xBack * scaleRatioX, viewport.height - (yBack + cardHeight) * scaleRatioY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
 
-                        // Rotate canvas 180 degrees for short edge duplex
-                        const rotatedCanvas = document.createElement('canvas');
-                        rotatedCanvas.width = canvas.width;
-                        rotatedCanvas.height = canvas.height;
-                        const rotatedCtx = rotatedCanvas.getContext('2d');
-                        rotatedCtx.translate(canvas.width / 2, canvas.height / 2);
-                        rotatedCtx.rotate(Math.PI);
-                        rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+                        let backCanvas = canvas;
+                        if (!leftRight) {
+                            backCanvas = document.createElement('canvas');
+                            backCanvas.width = canvas.width;
+                            backCanvas.height = canvas.height;
+                            const rotatedCtx = backCanvas.getContext('2d');
+                            rotatedCtx.translate(canvas.width / 2, canvas.height / 2);
+                            rotatedCtx.rotate(Math.PI);
+                            rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+                        }
 
                         const currentBackCount = backCardCount;
                         pageRenderPromises.push(
                             new Promise(resolve => {
-                                rotatedCanvas.toBlob((blob) => {
-                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                backCanvas.toBlob((blob) => {
+                                    recordCard(backZip, lastCrop.back, `back_${String(currentBackCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         backCardCount++;
@@ -555,9 +620,9 @@ cropForm.addEventListener('submit', async (event) => {
                         pageRenderPromises.push(
                             new Promise(resolve => {
                                 canvas.toBlob((blob) => {
-                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    recordCard(frontZip, lastCrop.front, `front_${String(currentFrontCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         frontCardCount++;
@@ -567,9 +632,9 @@ cropForm.addEventListener('submit', async (event) => {
                         pageRenderPromises.push(
                             new Promise(resolve => {
                                 canvas.toBlob((blob) => {
-                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    recordCard(backZip, lastCrop.back, `back_${String(currentBackCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         backCardCount++;
@@ -582,9 +647,9 @@ cropForm.addEventListener('submit', async (event) => {
                         pageRenderPromises.push(
                             new Promise(resolve => {
                                 canvas.toBlob((blob) => {
-                                    frontZip.file(`front_${String(currentFrontCount).padStart(4, '0')}.png`, blob);
+                                    recordCard(frontZip, lastCrop.front, `front_${String(currentFrontCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         frontCardCount++;
@@ -594,9 +659,9 @@ cropForm.addEventListener('submit', async (event) => {
                         pageRenderPromises.push(
                             new Promise(resolve => {
                                 canvas.toBlob((blob) => {
-                                    backZip.file(`back_${String(currentBackCount).padStart(4, '0')}.png`, blob);
+                                    recordCard(backZip, lastCrop.back, `back_${String(currentBackCount).padStart(4, '0')}.${fmt.ext}`, blob);
                                     resolve();
-                                }, 'image/png');
+                                }, fmt.type, 0.95);
                             })
                         );
                         backCardCount++;
@@ -611,6 +676,10 @@ cropForm.addEventListener('submit', async (event) => {
 
     // Wait for all blobs to be added to zip
     await Promise.all(pageRenderPromises);
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    lastCrop.front.sort(byName);
+    lastCrop.back.sort(byName);
+    sendMenu.setEnabled(lastCrop.front.length + lastCrop.back.length > 0);
 
     // Generate and download zip files
     if (isDuplex || isDuplexShort || isFoldVertical || isFoldHorizontal || isBackLast) {
@@ -643,4 +712,78 @@ cropForm.addEventListener('submit', async (event) => {
         pdfStatus.classList.remove('processing');
         pdfStatus.classList.add('success');
     }
+});
+
+// ---- Shared PnPTools wiring --------------------------------------------------
+
+PnP.dropzone(document.getElementById('pdfDropZone'), {
+    input: document.getElementById('pdfFile'),
+    accept: ['application/pdf', '.pdf'],
+    onFiles: (files) => loadPdf(files[0]).catch((err) => {
+        console.error(err);
+        PnP.toast(`Could not open the PDF: ${err.message}`, 'error');
+    }),
+});
+
+const sendMenu = PnP.sendMenu(document.getElementById('sendSlot'), {
+    from: 'CardCrop',
+    targets: ['PnPAlign', 'PnPBleed', 'PnPLayout', 'PnPBooklet'],
+    getItems: () => [
+        ...lastCrop.front.map((c) => ({ ...c, role: 'front' })),
+        ...lastCrop.back.map((c) => ({ ...c, role: 'back' })),
+    ],
+});
+sendMenu.setEnabled(false);
+
+PnP.init({
+    tool: 'PnPCardCrop',
+    offlineFiles: [pdfjsLib.GlobalWorkerOptions.workerSrc],
+    settingsRoot: cropForm,
+    project: {
+        getFiles: () => (pdfFile ? [{ name: pdfFile.name, blob: pdfFile }] : []),
+        setFiles: (files) => (files[0] ? loadPdf(files[0]) : null),
+    },
+    hasUnsavedWork: () => !!pdfFile,
+});
+
+// ---- Centre the grid on the page's printed content ----
+
+document.getElementById('centerOnArtBtn').addEventListener('click', () => {
+    if (!previewImage) {
+        PnP.toast('Load a PDF first.', 'error');
+        return;
+    }
+    const w = previewImage.width, h = previewImage.height;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(previewImage, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            // Anything clearly darker than paper white counts as artwork
+            if (d[i + 3] > 0 && (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235)) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+        }
+    }
+    if (x1 < 0) {
+        PnP.toast('No artwork found on this page.', 'error');
+        return;
+    }
+    const pxPerMM = scale * MM_TO_PT;
+    let dx = ((x0 + x1) / 2 - w / 2) / pxPerMM;
+    let dy = ((y0 + y1) / 2 - h / 2) / pxPerMM;
+    if (isBackPageNumber(previewPage)) {
+        if (backFlipsLeftRight(w / scale, h / scale)) dx = -dx;
+        else dy = -dy;
+    }
+    setOffsets(dx, dy);
+    PnP.toast(`Grid centred on the artwork (offset ${dx.toFixed(1)}, ${dy.toFixed(1)} mm).`, 'success');
 });
