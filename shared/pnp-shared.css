@@ -244,6 +244,239 @@
     color: var(--text-dim);
 }
 
+/* ---- Preview output (top bar) + viewer -------------------------------- */
+
+.pnp-outputs {
+    position: relative;
+}
+
+/* Also used on the hub page, outside .pnp-topbar, so it is fully styled here. */
+.pnp-outputs-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.pnp-outputs-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.pnp-outputs .pnp-popover {
+    left: auto;
+    right: 0;
+    width: min(320px, calc(100vw - 32px));
+    font-size: 0.8rem;
+}
+
+.pnp-viewer-open {
+    overflow: hidden;
+}
+
+.pnp-viewer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.pnp-viewer {
+    display: flex;
+    flex-direction: column;
+    width: min(1200px, 100%);
+    height: min(860px, 100%);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px var(--shadow);
+    overflow: hidden;
+}
+
+.pnp-viewer-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+
+.pnp-viewer-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pnp-viewer-title span,
+.pnp-viewer-count {
+    color: var(--text-dim);
+}
+
+.pnp-viewer-count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pnp-viewer-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.pnp-viewer-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--surface2);
+}
+
+.pnp-viewer-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.pnp-viewer-list {
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-right: 1px solid var(--border);
+    background: var(--surface2);
+}
+
+.pnp-viewer-thumb {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 4px;
+    text-align: left;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-dim);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.pnp-viewer-thumb:hover {
+    color: var(--text);
+    background: var(--surface);
+}
+
+.pnp-viewer-thumb.selected {
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--accent);
+}
+
+.pnp-viewer-thumb img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.pnp-viewer-thumb span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Checkerboard so transparent areas of the image are visible. */
+.pnp-viewer-stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    background-color: var(--bg);
+    background-image:
+        linear-gradient(45deg, var(--surface2) 25%, transparent 25%, transparent 75%, var(--surface2) 75%),
+        linear-gradient(45deg, var(--surface2) 25%, transparent 25%, transparent 75%, var(--surface2) 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+}
+
+.pnp-viewer-img {
+    flex: 1;
+    min-height: 0;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+.pnp-viewer-caption {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    background: var(--surface);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .pnp-viewer-backdrop {
+        padding: 0;
+    }
+
+    .pnp-viewer {
+        height: 100%;
+        border-radius: 0;
+    }
+
+    .pnp-viewer-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .pnp-viewer-list {
+        order: 2;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: none;
+        border-top: 1px solid var(--border);
+    }
+
+    .pnp-viewer-thumb {
+        grid-template-columns: 48px;
+    }
+
+    .pnp-viewer-thumb span {
+        display: none;
+    }
+}
+
 /* ---- Toasts ------------------------------------------------------------- */
 
 .pnp-toasts {

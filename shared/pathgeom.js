@@ -360,9 +360,75 @@ const PathGeom = (() => {
         return paths.filter((p) => p.nodes.length > 1 || p.closed);
     }
 
+    // ---- Editor shapes -> paths ----
+
+    const KAPPA = 0.5522847498;
+
+    // A card-editor shape's outline as nodes in fractions of its box
+    // ({ fx, fy, hi?, ho? }), or null for types that aren't drawn as a path.
+    function shapeNodes(shape) {
+        if (shape.type === 'path') return { nodes: shape.nodes, closed: !!shape.closed };
+        if (shape.type === 'polygon') return { nodes: shape.points.map((p) => ({ fx: p.fx, fy: p.fy })), closed: true };
+        if (shape.type === 'ellipse') {
+            const k = KAPPA * 0.5;
+            return {
+                closed: true,
+                nodes: [
+                    { fx: 0.5, fy: 0, hi: { fx: 0.5 - k, fy: 0 }, ho: { fx: 0.5 + k, fy: 0 }, smooth: true },
+                    { fx: 1, fy: 0.5, hi: { fx: 1, fy: 0.5 - k }, ho: { fx: 1, fy: 0.5 + k }, smooth: true },
+                    { fx: 0.5, fy: 1, hi: { fx: 0.5 + k, fy: 1 }, ho: { fx: 0.5 - k, fy: 1 }, smooth: true },
+                    { fx: 0, fy: 0.5, hi: { fx: 0, fy: 0.5 + k }, ho: { fx: 0, fy: 0.5 - k }, smooth: true },
+                ],
+            };
+        }
+        if (shape.type === 'rect') {
+            const r = Math.max(0, Math.min(shape.radius || 0, shape.w / 2, shape.h / 2));
+            if (r <= 0) return { closed: true, nodes: [{ fx: 0, fy: 0 }, { fx: 1, fy: 0 }, { fx: 1, fy: 1 }, { fx: 0, fy: 1 }] };
+            const rx = r / shape.w, ry = r / shape.h, kx = rx * KAPPA, ky = ry * KAPPA;
+            return {
+                closed: true,
+                nodes: [
+                    { fx: rx, fy: 0, hi: { fx: rx - kx, fy: 0 } }, { fx: 1 - rx, fy: 0, ho: { fx: 1 - rx + kx, fy: 0 } },
+                    { fx: 1, fy: ry, hi: { fx: 1, fy: ry - ky } }, { fx: 1, fy: 1 - ry, ho: { fx: 1, fy: 1 - ry + ky } },
+                    { fx: 1 - rx, fy: 1, hi: { fx: 1 - rx + kx, fy: 1 } }, { fx: rx, fy: 1, ho: { fx: rx - kx, fy: 1 } },
+                    { fx: 0, fy: 1 - ry, hi: { fx: 0, fy: 1 - ry + ky } }, { fx: 0, fy: ry, ho: { fx: 0, fy: ry - ky } },
+                ],
+            };
+        }
+        if (shape.type === 'line') {
+            return { closed: false, nodes: shape.diag === 'tlbr' ? [{ fx: 0, fy: 0 }, { fx: 1, fy: 1 }] : [{ fx: 1, fy: 0 }, { fx: 0, fy: 1 }] };
+        }
+        return null;
+    }
+
+    // A shape as a path in card coordinates with its position and rotation
+    // baked in. SVG cut files use this instead of transform attributes, which
+    // Cricut Design Space mis-scales (72/25.4 against untransformed elements).
+    function shapePath(shape) {
+        const sn = shapeNodes(shape);
+        if (!sn) return null;
+        const r = ((shape.rotation || 0) * Math.PI) / 180;
+        const cos = Math.cos(r), sin = Math.sin(r);
+        const cx = shape.x + shape.w / 2, cy = shape.y + shape.h / 2;
+        const f = (p) => {
+            const lx = (p.fx - 0.5) * shape.w, ly = (p.fy - 0.5) * shape.h;
+            return { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos };
+        };
+        return {
+            closed: sn.closed,
+            nodes: sn.nodes.map((n) => {
+                const o = f(n);
+                if (n.hi) o.hi = f(n.hi);
+                if (n.ho) o.ho = f(n.ho);
+                return o;
+            }),
+        };
+    }
+
     return {
         segments, cubicAt, splitCubic, flatten, bounds, toD, nearest, insertNode,
         smoothHandles, makeSmooth, simplify, fitPath, mapPath, parseD, arcToCubics,
+        shapeNodes, shapePath,
     };
 })();
 

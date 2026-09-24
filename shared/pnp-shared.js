@@ -7,8 +7,10 @@
 //   PnP.settings                   auto-persisted sidebar settings (localStorage)
 //   PnP.units                      mm / inch display layer for inputs marked data-unit="mm"
 //   PnP.presets / bindPreset()     shared card and paper size presets
+//   PnP.bindMachinePreset() / cutSvg()  cutting-machine dead margin + guide-framed SVG cut files
 //   PnP.handoff                    pass image sets between tools (IndexedDB)
 //   PnP.sendMenu() / importButton()
+//   PnP.outputPreviewButton() / previewOutput()  browse stored tool outputs in a viewer
 //   PnP.project                    .pnp project files (zip: manifest.json + files/)
 //   PnP.guard()                    warn before leaving with unsaved work
 //   PnP.dropzone()                 drag & drop + click-to-browse file zone
@@ -361,6 +363,85 @@
         settings.onApply(syncFromInputs);
         select.dataset.persist = 'false'; // derived from the inputs
         return { sync: syncFromInputs };
+    }
+
+    // ---------------------------------------------------------------- cutting machine
+
+    // A cutting machine can't reach a strip around the edge of its mat (the
+    // "dead margin"). SVG cut files therefore cover only the reachable part of
+    // the sheet — the paper minus the dead margin on every side — outlined by
+    // a guide rectangle, so the cut job lines up with the printed paper once
+    // the guide is placed at the machine's origin.
+    const machinePresets = [
+        { id: 'cricut', label: 'Cricut', margin: 6.35 },
+    ];
+
+    function formatLength(mm) {
+        return units.current === 'in' ? `${+(mm / MM_PER_IN).toFixed(3)} in` : `${mm} mm`;
+    }
+
+    // Same idea as bindPreset, for the single dead-margin input.
+    function bindMachinePreset(select, input) {
+        const render = () => {
+            select.innerHTML = '';
+            machinePresets.forEach((p) => select.append(h('option', { value: p.id }, `${p.label} (${formatLength(p.margin)})`)));
+            select.append(h('option', { value: 'custom' }, 'Custom'));
+        };
+        const syncFromInput = () => {
+            const v = parseFloat(nativeValue.get.call(input));
+            const match = machinePresets.find((p) => Math.abs(p.margin - v) < 0.005);
+            select.value = match ? match.id : 'custom';
+        };
+        render();
+        syncFromInput();
+        select.addEventListener('change', () => {
+            const p = machinePresets.find((x) => x.id === select.value);
+            if (p) setFieldValue(input, p.margin);
+        });
+        input.addEventListener('input', syncFromInput);
+        units.onChange(() => { render(); syncFromInput(); });
+        settings.onApply(syncFromInput);
+        select.dataset.persist = 'false'; // derived from the input
+        return { sync: syncFromInput };
+    }
+
+    const CUT_GUIDE_COLOR = '#2b6cb0';
+
+    /**
+     * SVG cut file the size of the machine's reachable area (paper minus dead
+     * margin), with the guide rectangle on its outline. `content` gets a
+     * function that maps a paper-mm point [x, y] into the file's coordinates
+     * and returns the markup.
+     *
+     * Keep the markup flat for Cricut Design Space: no transform attributes
+     * (it mis-scales them), no <g> groups (it misplaces grouped content on
+     * import) and fill/stroke on every element rather than inherited. Use
+     * cutPath() for each line.
+     *   cutSvg({ paperW, paperH, margin, content: (toGuide) => string }) -> string
+     */
+    function cutSvg({ paperW, paperH, margin, content }) {
+        const f = (v) => +v.toFixed(3);
+        const m = Math.max(0, margin);
+        const w = f(Math.max(0, paperW - 2 * m));
+        const hh = f(Math.max(0, paperH - 2 * m));
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${hh}mm" viewBox="0 0 ${w} ${hh}">
+  <rect x="0" y="0" width="${w}" height="${hh}" fill="none" stroke="${CUT_GUIDE_COLOR}" stroke-width="0.1"/>
+${content(([x, y]) => [x - m, y - m])}
+</svg>
+`;
+    }
+
+    // One stroked polyline for cutSvg(): points are [x, y] in file coordinates.
+    function cutPath(points, color, closed = true) {
+        const f = (v) => +v.toFixed(3);
+        const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${f(x)} ${f(y)}`).join(' ') + (closed ? ' Z' : '');
+        return `  <path d="${d}" fill="none" stroke="${color}" stroke-width="0.25"/>`;
+    }
+
+    // True if any [x, y] point (paper mm) lies in the dead margin.
+    function inDeadMargin(points, paperW, paperH, margin) {
+        const eps = 1e-6;
+        return points.some(([x, y]) => x < margin - eps || y < margin - eps || x > paperW - margin + eps || y > paperH - margin + eps);
     }
 
     // ---------------------------------------------------------------- units
@@ -742,57 +823,172 @@
     }
 
     // "Import from other tools" button + popover listing recent hand-offs.
-    function importButton(container, onFiles) {
-        const wrap = h('div', { class: 'pnp-import' });
+    // Fill `pop` with the stored tool outputs (newest first); onPick(set)
+    // runs when one is chosen. Each row can also be removed from the list.
+    async function renderOutputList(pop, onPick) {
+        pop.innerHTML = '';
+        let sets = [];
+        try { sets = await handoff.list(); } catch (err) { /* IndexedDB unavailable */ }
+        if (sets.length === 0) {
+            pop.append(h('div', { class: 'pnp-popover-empty' }, 'Nothing here yet — use “Send to” in another PnPTools tool.'));
+        }
+        sets.forEach((set) => {
+            pop.append(h('div', { class: 'pnp-popover-row' },
+                h('button', {
+                    type: 'button',
+                    class: 'pnp-popover-item',
+                    onclick: () => { pop.hidden = true; onPick(set); },
+                },
+                h('strong', {}, `${set.items.length} image(s)`),
+                h('span', {}, ` from ${set.from} · ${timeAgo(set.created)}`)),
+                h('button', {
+                    type: 'button',
+                    class: 'pnp-popover-remove',
+                    title: 'Remove from list',
+                    'aria-label': 'Remove from list',
+                    onclick: async (ev) => {
+                        ev.stopPropagation();
+                        await handoff.remove(set.id);
+                        ev.target.closest('.pnp-popover-row').remove();
+                        if (!pop.querySelector('.pnp-popover-row')) renderOutputList(pop, onPick);
+                    },
+                }, '✕')));
+        });
+    }
+
+    // A button that toggles a popover listing the stored tool outputs.
+    function outputMenu(container, { label, wrapClass, buttonClass, onPick }) {
+        const wrap = h('div', { class: wrapClass });
         const pop = h('div', { class: 'pnp-popover', hidden: true });
         const btn = h('button', {
             type: 'button',
-            class: 'btn-secondary btn-small',
+            class: buttonClass,
+            'aria-haspopup': 'true',
             onclick: async (e) => {
                 e.stopPropagation();
                 if (!pop.hidden) { pop.hidden = true; return; }
-                pop.innerHTML = '';
-                let sets = [];
-                try { sets = await handoff.list(); } catch (err) { /* IndexedDB unavailable */ }
-                if (sets.length === 0) {
-                    pop.append(h('div', { class: 'pnp-popover-empty' }, 'Nothing here yet — use “Send to” in another PnPTools tool.'));
-                }
-                sets.forEach((set) => {
-                    pop.append(h('div', { class: 'pnp-popover-row' },
-                        h('button', {
-                            type: 'button',
-                            class: 'pnp-popover-item',
-                            onclick: async () => {
-                                pop.hidden = true;
-                                try {
-                                    await onFiles(itemsToFiles(set.items), set);
-                                    toast(`Imported ${set.items.length} image(s) from ${set.from}.`, 'success');
-                                } catch (err) {
-                                    toast(`Import failed: ${err.message}`, 'error');
-                                }
-                            },
-                        },
-                        h('strong', {}, `${set.items.length} image(s)`),
-                        h('span', {}, ` from ${set.from} · ${timeAgo(set.created)}`)),
-                        h('button', {
-                            type: 'button',
-                            class: 'pnp-popover-remove',
-                            title: 'Remove from list',
-                            'aria-label': 'Remove from list',
-                            onclick: async (ev) => {
-                                ev.stopPropagation();
-                                await handoff.remove(set.id);
-                                ev.target.closest('.pnp-popover-row').remove();
-                            },
-                        }, '✕')));
-                });
+                await renderOutputList(pop, onPick);
                 pop.hidden = false;
             },
-        }, '⇩ Import from other tools');
+        }, label);
         document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) pop.hidden = true; });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') pop.hidden = true; });
         wrap.append(btn, pop);
-        container.append(wrap);
+        if (container) container.append(wrap);
         return wrap;
+    }
+
+    function importButton(container, onFiles) {
+        return outputMenu(container, {
+            label: '⇩ Import from other tools',
+            wrapClass: 'pnp-import',
+            buttonClass: 'btn-secondary btn-small',
+            onPick: async (set) => {
+                try {
+                    await onFiles(itemsToFiles(set.items), set);
+                    toast(`Imported ${set.items.length} image(s) from ${set.from}.`, 'success');
+                } catch (err) {
+                    toast(`Import failed: ${err.message}`, 'error');
+                }
+            },
+        });
+    }
+
+    // Top-bar "Preview output": browse any tool's stored output in a viewer.
+    function outputPreviewButton(container) {
+        return outputMenu(container, {
+            label: 'Preview output',
+            wrapClass: 'pnp-outputs',
+            buttonClass: 'pnp-outputs-btn',
+            onPick: previewOutput,
+        });
+    }
+
+    // ---------------------------------------------------------------- output viewer
+
+    // Modal viewer for one stored output set: image list on the side, the
+    // selected image large. ←/→ (or ↑/↓) step through, Esc closes.
+    function previewOutput(set) {
+        const items = set.items.filter((it) => it.blob);
+        if (!items.length) { toast('This output has no images.', 'error'); return; }
+        const urls = items.map((it) => URL.createObjectURL(it.blob));
+        const opener = document.activeElement;
+        let index = 0;
+
+        const big = h('img', { class: 'pnp-viewer-img', alt: '' });
+        const caption = h('div', { class: 'pnp-viewer-caption' });
+        const counter = h('span', { class: 'pnp-viewer-count' });
+        const list = h('div', { class: 'pnp-viewer-list', role: 'listbox', 'aria-label': 'Images' });
+        const thumbs = items.map((it, i) => {
+            const b = h('button', {
+                type: 'button',
+                class: 'pnp-viewer-thumb',
+                role: 'option',
+                title: it.name,
+                onclick: () => select(i),
+            }, h('img', { src: urls[i], alt: '', loading: 'lazy' }), h('span', {}, it.name));
+            list.append(b);
+            return b;
+        });
+        const download = h('button', {
+            type: 'button',
+            class: 'pnp-viewer-btn',
+            onclick: () => downloadBlob(items[index].blob, items[index].name),
+        }, 'Download');
+        const close = h('button', { type: 'button', class: 'pnp-viewer-btn', 'aria-label': 'Close', onclick: () => done() }, '✕');
+
+        const dialog = h('div', { class: 'pnp-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Output from ${set.from}` },
+            h('div', { class: 'pnp-viewer-head' },
+                h('div', { class: 'pnp-viewer-title' },
+                    h('strong', {}, `${items.length} image(s) from ${set.from}`),
+                    h('span', {}, ` · ${timeAgo(set.created)}`)),
+                counter, download, close),
+            h('div', { class: 'pnp-viewer-body' },
+                list,
+                h('div', { class: 'pnp-viewer-stage' }, big, caption)));
+        const backdrop = h('div', { class: 'pnp-viewer-backdrop', onclick: (e) => { if (e.target === backdrop) done(); } }, dialog);
+
+        function select(i) {
+            index = (i + items.length) % items.length;
+            const it = items[index];
+            big.src = urls[index];
+            big.onload = () => {
+                caption.textContent = `${it.name} · ${big.naturalWidth} × ${big.naturalHeight} px · ${formatBytes(it.blob.size)}`;
+            };
+            caption.textContent = it.name;
+            counter.textContent = `${index + 1} / ${items.length}`;
+            thumbs.forEach((t, j) => {
+                t.classList.toggle('selected', j === index);
+                t.setAttribute('aria-selected', String(j === index));
+            });
+            thumbs[index].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+
+        function onKey(e) {
+            if (e.key === 'Escape') { e.preventDefault(); done(); }
+            else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); select(index + 1); }
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); select(index - 1); }
+        }
+
+        function done() {
+            document.removeEventListener('keydown', onKey, true);
+            backdrop.remove();
+            document.body.classList.remove('pnp-viewer-open');
+            urls.forEach((u) => URL.revokeObjectURL(u));
+            if (opener && opener.focus) opener.focus();
+        }
+
+        document.addEventListener('keydown', onKey, true);
+        document.body.append(backdrop);
+        document.body.classList.add('pnp-viewer-open');
+        select(0);
+        close.focus();
+    }
+
+    function formatBytes(n) {
+        if (n < 1024) return `${n} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+        return `${(n / 1024 / 1024).toFixed(1)} MB`;
     }
 
     // ---------------------------------------------------------------- dropzone
@@ -924,6 +1120,7 @@
                     title: t.id,
                 }, h('span', { 'aria-hidden': 'true' }, t.icon), ` ${t.name}`))),
             h('div', { class: 'pnp-actions' },
+                outputPreviewButton(),
                 theme.toggleButton(),
                 h('div', { class: 'pnp-units', role: 'group', 'aria-label': 'Units' },
                     ['mm', 'in'].map((u) => h('button', {
@@ -1002,9 +1199,16 @@
         settings,
         presets,
         bindPreset,
+        machinePresets,
+        bindMachinePreset,
+        cutSvg,
+        cutPath,
+        inDeadMargin,
         handoff,
         sendMenu,
         importButton,
+        outputPreviewButton,
+        previewOutput,
         itemsToFiles,
         dropzone,
         project,

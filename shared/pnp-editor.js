@@ -507,38 +507,11 @@ const PnPEditor = (() => {
     }
 
     // Rect / ellipse / line -> equivalent path (same box and rotation), for node editing.
-    const KAPPA = 0.5522847498;
     function convertToPath(shape) {
       if (shape.type === 'path') return shape;
-      let nodes;
-      let closed = true;
-      if (shape.type === 'ellipse') {
-        const k = KAPPA * 0.5;
-        nodes = [
-          { fx: 0.5, fy: 0, hi: { fx: 0.5 - k, fy: 0 }, ho: { fx: 0.5 + k, fy: 0 }, smooth: true },
-          { fx: 1, fy: 0.5, hi: { fx: 1, fy: 0.5 - k }, ho: { fx: 1, fy: 0.5 + k }, smooth: true },
-          { fx: 0.5, fy: 1, hi: { fx: 0.5 + k, fy: 1 }, ho: { fx: 0.5 - k, fy: 1 }, smooth: true },
-          { fx: 0, fy: 0.5, hi: { fx: 0, fy: 0.5 + k }, ho: { fx: 0, fy: 0.5 - k }, smooth: true },
-        ];
-      } else if (shape.type === 'rect') {
-        const r = Math.max(0, Math.min(shape.radius || 0, shape.w / 2, shape.h / 2));
-        if (r <= 0) {
-          nodes = [{ fx: 0, fy: 0 }, { fx: 1, fy: 0 }, { fx: 1, fy: 1 }, { fx: 0, fy: 1 }];
-        } else {
-          const rx = r / shape.w, ry = r / shape.h, kx = rx * KAPPA, ky = ry * KAPPA;
-          nodes = [
-            { fx: rx, fy: 0, hi: { fx: rx - kx, fy: 0 } }, { fx: 1 - rx, fy: 0, ho: { fx: 1 - rx + kx, fy: 0 } },
-            { fx: 1, fy: ry, hi: { fx: 1, fy: ry - ky } }, { fx: 1, fy: 1 - ry, ho: { fx: 1, fy: 1 - ry + ky } },
-            { fx: 1 - rx, fy: 1, hi: { fx: 1 - rx + kx, fy: 1 } }, { fx: rx, fy: 1, ho: { fx: rx - kx, fy: 1 } },
-            { fx: 0, fy: 1 - ry, hi: { fx: 0, fy: 1 - ry + ky } }, { fx: 0, fy: ry, ho: { fx: 0, fy: ry - ky } },
-          ];
-        }
-      } else if (shape.type === 'line') {
-        closed = false;
-        nodes = shape.diag === 'tlbr' ? [{ fx: 0, fy: 0 }, { fx: 1, fy: 1 }] : [{ fx: 1, fy: 0 }, { fx: 0, fy: 1 }];
-      } else {
-        return shape;
-      }
+      const sn = shape.type === 'polygon' ? null : PathGeom.shapeNodes(shape);
+      if (!sn) return shape;
+      const { nodes, closed } = sn;
       shape.type = 'path';
       shape.nodes = nodes;
       shape.closed = closed;
@@ -1129,13 +1102,6 @@ const PnPEditor = (() => {
         return { transform, tag: 'path', attrs: { d: PathGeom.toD(localPath(shape)) } };
       }
       return null;
-    }
-
-    function shapeMarkup(shape) {
-      const d = describeShape(shape);
-      if (!d) return '';
-      const attrs = Object.entries(d.attrs).map(([k, v]) => `${k}="${round(v)}"`).join(' ');
-      return `<g transform="${d.transform}"><${d.tag} ${attrs} fill="none" stroke="${state.layerColors[shape.layer]}" stroke-width="0.15"/></g>`;
     }
 
     function round(n) {
@@ -2999,13 +2965,17 @@ const PnPEditor = (() => {
 
     function buildExportSVG(layers, mirror) {
       const fmt = (n) => Math.round(n * 1000) / 1000;
-      const shapesMarkup = state.shapes
+      // Flat paths with rotation and mirroring baked in: Cricut Design Space
+      // mis-scales anything under a transform attribute.
+      const content = state.shapes
         .filter((s) => layers.includes(s.layer))
-        .map(shapeMarkup)
+        .map((s) => {
+          let path = PathGeom.shapePath(s);
+          if (!path) return '';
+          if (mirror) path = PathGeom.mapPath(path, (p) => ({ x: state.cardW - p.x, y: p.y }));
+          return `<path d="${PathGeom.toD(path, fmt)}" fill="none" stroke="${state.layerColors[s.layer]}" stroke-width="0.15"/>`;
+        })
         .join('\n');
-      const content = mirror
-        ? `<g transform="translate(${fmt(state.cardW)},0) scale(-1,1)">\n${shapesMarkup}\n</g>`
-        : shapesMarkup;
       return `<svg xmlns="${SVG_NS}" width="${fmt(state.cardW)}mm" height="${fmt(state.cardH)}mm" viewBox="0 0 ${fmt(state.cardW)} ${fmt(state.cardH)}">\n${content}\n</svg>`;
     }
 
