@@ -43,7 +43,7 @@
 
           <!-- Page Selection Section -->
           <div class="panel">
-            <div class="panel-title">Pages</div>
+            <div class="panel-title">Pages <span class="help" tabindex="0" data-tip="Which PDF pages to crop, counting every page including back pages. Leave Last page empty to go to the end. For the duplex layouts, start on a front page.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="startingPage">First page</label>
@@ -58,7 +58,7 @@
 
           <!-- DPI Selection Section -->
           <div class="panel">
-            <div class="panel-title">Export DPI</div>
+            <div class="panel-title">Export DPI <span class="help" tabindex="0" data-tip="Resolution the cards are cropped at. PDF pages are rendered at this DPI, and images are resampled to it. 300 is typical for printing; higher is sharper but makes bigger files.">?</span></div>
             <div class="control-group">
               <label for="dpi">Export DPI</label>
               <input type="number" id="dpi" value="288" min="72" step="72" />
@@ -136,7 +136,7 @@
 
           <!-- Grid Configuration Section -->
           <div class="panel">
-            <div class="panel-title">Grid Configuration</div>
+            <div class="panel-title">Grid Configuration <span class="help" tabindex="0" data-tip="How many card positions go across and down each page. For the Fold layouts, count fronts and backs together: Fold Vertical alternates front and back columns, Fold Horizontal alternates rows.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="rows">Rows</label>
@@ -193,7 +193,7 @@
         </form>
 
         <div class="panel">
-          <div class="panel-title">Use the Cropped Cards</div>
+          <div class="panel-title">Use the Cropped Cards <span class="help" tabindex="0" data-tip="Opens another PnPTools tool in a new tab with these cards (fronts and backs keep their roles). The cropped cards are also listed under Inputs &amp; outputs, so any tool can pick them later.">?</span></div>
           <div id="sendSlot"></div>
         </div>
       </div>
