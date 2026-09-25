@@ -9,8 +9,9 @@
 //   PnP.presets / bindPreset()     shared card and paper size presets
 //   PnP.bindMachinePreset() / cutSvg()  cutting-machine dead margin + guide-framed SVG cut files
 //   PnP.handoff                    pass image sets between tools (IndexedDB)
-//   PnP.sendMenu() / importButton()
-//   PnP.outputPreviewButton() / previewOutput()  browse stored tool outputs in a viewer
+//   PnP.sendMenu() / filePicker()  send files to a tool / pick recorded files
+//   PnP.outputPreviewButton() / previewOutput()  browse stored tool inputs and outputs in a viewer
+//   PnP.recordFiles()              remember a tool's inputs / outputs for that viewer
 //   PnP.project                    .pnp project files (zip: manifest.json + files/)
 //   PnP.guard()                    warn before leaving with unsaved work
 //   PnP.dropzone()                 drag & drop + click-to-browse file zone
@@ -72,7 +73,10 @@
         return node;
     }
 
-    function downloadBlob(blob, filename) {
+    // Downloads are remembered as the tool's output (see recordFiles), except
+    // project files: pass { record: false }.
+    function downloadBlob(blob, filename, { record = true } = {}) {
+        if (record) recordDownload(blob, filename);
         const url = URL.createObjectURL(blob);
         const a = h('a', { href: url, download: filename });
         document.body.appendChild(a);
@@ -738,12 +742,16 @@ ${content(([x, y]) => [x - m, y - m])}
 
     // ---------------------------------------------------------------- handoff
 
-    // Image sets passed between tools live in IndexedDB (same origin for the
-    // hub and every standalone tool deploy). The newest MAX_SETS are kept.
+    // File sets passed between tools live in IndexedDB (same origin for the
+    // hub and every standalone tool deploy): outputs (sent or downloaded) and
+    // inputs (files loaded into a tool). The newest MAX_SETS of each kind are
+    // kept; saving a set identical to a stored one just refreshes that one.
     const handoff = (() => {
         const DB = 'pnptools';
         const STORE = 'handoff';
-        const MAX_SETS = 12;
+        const MAX_SETS = { output: 12, input: 8 };
+        const kindOf = (set) => set.kind || 'output';
+        const signature = (kind, from, items) => JSON.stringify([kind, from, items.map((it) => [it.name, it.blob && it.blob.size])]);
 
         function open() {
             return new Promise((resolve, reject) => {
@@ -769,14 +777,15 @@ ${content(([x, y]) => [x - m, y - m])}
             return (all || []).sort((a, b) => b.created - a.created);
         }
 
-        /** items: [{ name, blob, role? }] -> id */
-        async function save({ name, from, items }) {
-            const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-            await tx('readwrite', (s) => s.put({ id, name, from, created: Date.now(), items }));
-            const all = await list();
-            if (all.length > MAX_SETS) {
-                await tx('readwrite', (s) => all.slice(MAX_SETS).forEach((set) => s.delete(set.id)));
-            }
+        /** items: [{ name, blob, role? }], kind: 'output' | 'input' -> id */
+        async function save({ name, from, items, kind = 'output' }) {
+            const sig = signature(kind, from, items);
+            const same = (await list()).find((set) => set.sig === sig);
+            const id = same ? same.id : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+            // page: which tool page recorded it, so New there can clear its own sets.
+            await tx('readwrite', (s) => s.put({ id, name, from, kind, sig, page: location.pathname, created: Date.now(), items }));
+            const stale = (await list()).filter((set) => kindOf(set) === kind).slice(MAX_SETS[kind] || 12);
+            if (stale.length) await tx('readwrite', (s) => stale.forEach((set) => s.delete(set.id)));
             return id;
         }
 
@@ -805,13 +814,62 @@ ${content(([x, y]) => [x - m, y - m])}
             }
         }
 
-        return { list, save, get, remove, receive };
+        async function removeFromPage(path) {
+            const mine = (await list()).filter((set) => set.page === path);
+            if (mine.length) await tx('readwrite', (s) => mine.forEach((set) => s.delete(set.id)));
+        }
+
+        return { list, save, get, remove, removeFromPage, receive, kindOf };
     })();
+
+    // ---------------------------------------------------------------- recorded files
+
+    let currentTool = null; // TOOLS entry of this page, set by init()
+
+    const EXT_TYPES = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+        svg: 'image/svg+xml', pdf: 'application/pdf', json: 'application/json', txt: 'text/plain',
+    };
+    const typeFromName = (name) => EXT_TYPES[(name.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+
+    // An <input accept>-style list (['image/*', '.pdf', 'application/json'])
+    // as a test on a file name and type; no list accepts everything.
+    const acceptMatcher = (accept) => (name, type) => !accept || accept.some((a) => (a.endsWith('/*')
+        ? (type || '').startsWith(a.slice(0, -1))
+        : type === a || name.toLowerCase().endsWith(a)));
+
+    // Remember files a tool took in or produced, for the Inputs & outputs
+    // viewer (and "Import from other tools"). Never throws: it's a convenience.
+    async function recordFiles({ kind = 'output', items, from } = {}) {
+        from = from || (currentTool && currentTool.name);
+        if (!from || !items || !items.length || !window.indexedDB) return null;
+        try {
+            const list = items.filter((it) => it && it.blob).map((it) => ({ name: it.name, blob: it.blob, role: it.role || null }));
+            if (!list.length) return null;
+            return await handoff.save({ name: `${list.length} file(s) ${kind === 'input' ? 'loaded in' : 'from'} ${from}`, from, items: list, kind });
+        } catch (err) {
+            console.warn('Could not record files:', err);
+            return null;
+        }
+    }
+
+    // A downloaded zip is recorded as its contents, so they can be previewed.
+    async function recordDownload(blob, filename) {
+        if (!currentTool) return;
+        let items = [{ name: filename, blob }];
+        if (/\.zip$/i.test(filename)) {
+            try {
+                const entries = await zip.read(blob);
+                items = [...entries].map(([name, data]) => ({ name: name.split('/').pop(), blob: new Blob([data], { type: typeFromName(name) }) }));
+            } catch (err) { /* not a zip we can read: keep it whole */ }
+        }
+        await recordFiles({ kind: 'output', items });
+    }
 
     // Turn stored items back into File objects that tools' loaders accept.
     function itemsToFiles(items) {
         return items.map((it) => {
-            const f = new File([it.blob], it.name, { type: it.blob.type || 'image/png' });
+            const f = new File([it.blob], it.name, { type: it.blob.type || typeFromName(it.name) });
             if (it.role) f.pnpRole = it.role;
             return f;
         });
@@ -859,41 +917,75 @@ ${content(([x, y]) => [x - m, y - m])}
     // "Import from other tools" button + popover listing recent hand-offs.
     // Fill `pop` with the stored tool outputs (newest first); onPick(set)
     // runs when one is chosen. Each row can also be removed from the list.
-    async function renderOutputList(pop, onPick) {
+    const isImage = (it) => it.blob && /^image\//.test(it.blob.type || typeFromName(it.name));
+
+    function describeSet(set) {
+        const n = set.items.length;
+        const noun = set.items.every(isImage) ? 'image' : 'file';
+        return `${n} ${noun}${n === 1 ? '' : 's'}`;
+    }
+
+    // filter(item): list only sets with a matching file. browse(): adds a
+    // first row that opens the file chooser instead.
+    async function renderOutputList(pop, onPick, opts = {}) {
+        const { filter, browse } = opts;
         pop.innerHTML = '';
         let sets = [];
         try { sets = await handoff.list(); } catch (err) { /* IndexedDB unavailable */ }
-        if (sets.length === 0) {
-            pop.append(h('div', { class: 'pnp-popover-empty' }, 'Nothing here yet — use “Send to” in another PnPTools tool.'));
+        if (filter) sets = sets.filter((set) => set.items.some(filter));
+        if (browse) {
+            pop.append(h('div', { class: 'pnp-popover-row' }, h('button', {
+                type: 'button',
+                class: 'pnp-popover-item pnp-popover-browse',
+                onclick: () => { pop.hidden = true; browse(); },
+            }, h('strong', {}, 'Browse files on this device…'))));
         }
-        sets.forEach((set) => {
-            pop.append(h('div', { class: 'pnp-popover-row' },
-                h('button', {
-                    type: 'button',
-                    class: 'pnp-popover-item',
-                    onclick: () => { pop.hidden = true; onPick(set); },
-                },
-                h('strong', {}, `${set.items.length} image(s)`),
-                h('span', {}, ` from ${set.from} · ${timeAgo(set.created)}`)),
-                h('button', {
-                    type: 'button',
-                    class: 'pnp-popover-remove',
-                    title: 'Remove from list',
-                    'aria-label': 'Remove from list',
-                    onclick: async (ev) => {
-                        ev.stopPropagation();
-                        await handoff.remove(set.id);
-                        ev.target.closest('.pnp-popover-row').remove();
-                        if (!pop.querySelector('.pnp-popover-row')) renderOutputList(pop, onPick);
-                    },
-                }, '✕')));
+        if (sets.length === 0) {
+            pop.append(h('div', { class: 'pnp-popover-empty' }, 'Nothing here yet. Files you load into or export from a PnPTools tool show up here.'));
+        }
+        [['output', 'Outputs'], ['input', 'Inputs']].forEach(([kind, title]) => {
+            const group = sets.filter((set) => handoff.kindOf(set) === kind);
+            if (!group.length) return;
+            pop.append(h('div', { class: 'pnp-popover-heading' }, title));
+            group.forEach((set) => appendSetRow(pop, set, onPick, opts));
         });
     }
 
+    function appendSetRow(pop, set, onPick, opts) {
+        pop.append(h('div', { class: 'pnp-popover-row', 'data-kind': handoff.kindOf(set) },
+            h('button', {
+                type: 'button',
+                class: 'pnp-popover-item',
+                onclick: () => { pop.hidden = true; onPick(set); },
+            },
+            h('strong', {}, describeSet(set)),
+            h('span', {}, ` ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from} · ${timeAgo(set.created)}`)),
+            h('button', {
+                type: 'button',
+                class: 'pnp-popover-remove',
+                title: 'Remove from list',
+                'aria-label': 'Remove from list',
+                onclick: async (ev) => {
+                    ev.stopPropagation();
+                    await handoff.remove(set.id);
+                    renderOutputList(pop, onPick, opts);
+                },
+            }, '✕')));
+    }
+
     // A button that toggles a popover listing the stored tool outputs.
-    function outputMenu(container, { label, wrapClass, buttonClass, onPick }) {
+    // floating: the popover is placed on the page under the button, so a
+    // scrolling or clipped container (a sidebar list) can't cut it off.
+    function outputMenu(container, { label, title, wrapClass, buttonClass, onPick, filter, browse, floating = false }) {
         const wrap = h('div', { class: wrapClass });
-        const pop = h('div', { class: 'pnp-popover', hidden: true });
+        const pop = h('div', { class: `pnp-popover${floating ? ' pnp-popover-floating' : ''}`, hidden: true });
+        const place = () => {
+            const r = btn.getBoundingClientRect();
+            const width = Math.max(260, r.width);
+            pop.style.width = `${width}px`;
+            pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`;
+            pop.style.top = `${r.bottom + 4}px`;
+        };
         const btn = h('button', {
             type: 'button',
             class: buttonClass,
@@ -901,37 +993,56 @@ ${content(([x, y]) => [x - m, y - m])}
             onclick: async (e) => {
                 e.stopPropagation();
                 if (!pop.hidden) { pop.hidden = true; return; }
-                await renderOutputList(pop, onPick);
+                await renderOutputList(pop, onPick, { filter, browse });
+                if (floating) place();
                 pop.hidden = false;
             },
+            title,
+            'aria-label': typeof label === 'string' ? null : title, // icon-only buttons
         }, label);
         document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) pop.hidden = true; });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') pop.hidden = true; });
+        if (floating) {
+            window.addEventListener('resize', () => { pop.hidden = true; });
+            document.addEventListener('scroll', (e) => { if (!pop.contains(e.target)) pop.hidden = true; }, true);
+        }
         wrap.append(btn, pop);
         if (container) container.append(wrap);
         return wrap;
     }
 
-    function importButton(container, onFiles) {
+    // "Pick from Inputs & outputs": a button whose popover lists the recorded
+    // file sets holding files this input accepts; picking one passes those
+    // files to onFiles. browse() adds a "Browse files…" entry (for buttons
+    // that replace a plain file input).
+    function filePicker(container, { accept, onFiles, browse, label = 'Pick from Inputs & outputs', title, buttonClass = 'pnp-pick-btn', floating = true }) {
+        const matches = acceptMatcher(accept);
+        const filter = (it) => it.blob && matches(it.name, it.blob.type || typeFromName(it.name));
         return outputMenu(container, {
-            label: '⇩ Import from other tools',
-            wrapClass: 'pnp-import',
-            buttonClass: 'btn-secondary btn-small',
+            label,
+            title: title || 'Use files loaded into or exported from PnPTools tools',
+            wrapClass: 'pnp-pick',
+            buttonClass,
+            floating,
+            filter,
+            browse,
             onPick: async (set) => {
                 try {
-                    await onFiles(itemsToFiles(set.items), set);
-                    toast(`Imported ${set.items.length} image(s) from ${set.from}.`, 'success');
+                    const files = itemsToFiles(set.items.filter(filter));
+                    await onFiles(files, set);
+                    toast(`Loaded ${files.length} file(s) from ${set.from}.`, 'success');
                 } catch (err) {
-                    toast(`Import failed: ${err.message}`, 'error');
+                    toast(`Could not load the files: ${err.message}`, 'error');
                 }
             },
         });
     }
 
-    // Top-bar "Preview output": browse any tool's stored output in a viewer.
+    // Top-bar "Inputs & outputs": browse any tool's recorded files in a viewer.
     function outputPreviewButton(container) {
         return outputMenu(container, {
-            label: 'Preview output',
+            label: 'Inputs & outputs',
+            title: 'Preview files loaded into and exported from PnPTools tools',
             wrapClass: 'pnp-outputs',
             buttonClass: 'pnp-outputs-btn',
             onPick: previewOutput,
@@ -942,14 +1053,19 @@ ${content(([x, y]) => [x - m, y - m])}
 
     // Modal viewer for one stored output set: image list on the side, the
     // selected image large. ←/→ (or ↑/↓) step through, Esc closes.
+    // Images (and SVGs) show as pictures, PDFs in the browser's PDF viewer;
+    // anything else can still be downloaded.
     function previewOutput(set) {
         const items = set.items.filter((it) => it.blob);
-        if (!items.length) { toast('This output has no images.', 'error'); return; }
+        if (!items.length) { toast('This set has no files.', 'error'); return; }
+        const typeOf = (it) => it.blob.type || typeFromName(it.name);
         const urls = items.map((it) => URL.createObjectURL(it.blob));
         const opener = document.activeElement;
         let index = 0;
 
         const big = h('img', { class: 'pnp-viewer-img', alt: '' });
+        const doc = h('iframe', { class: 'pnp-viewer-doc', title: 'Document preview', hidden: true });
+        const none = h('div', { class: 'pnp-viewer-none', hidden: true }, 'No preview for this file type. Use Download.');
         const caption = h('div', { class: 'pnp-viewer-caption' });
         const counter = h('span', { class: 'pnp-viewer-count' });
         const list = h('div', { class: 'pnp-viewer-list', role: 'listbox', 'aria-label': 'Images' });
@@ -960,7 +1076,10 @@ ${content(([x, y]) => [x - m, y - m])}
                 role: 'option',
                 title: it.name,
                 onclick: () => select(i),
-            }, h('img', { src: urls[i], alt: '', loading: 'lazy' }), h('span', {}, it.name));
+            }, isImage(it)
+                ? h('img', { src: urls[i], alt: '', loading: 'lazy' })
+                : h('span', { class: 'pnp-viewer-filetype' }, (it.name.split('.').pop() || 'file').slice(0, 4).toUpperCase()),
+            h('span', {}, it.name));
             list.append(b);
             return b;
         });
@@ -974,22 +1093,33 @@ ${content(([x, y]) => [x - m, y - m])}
         const dialog = h('div', { class: 'pnp-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Output from ${set.from}` },
             h('div', { class: 'pnp-viewer-head' },
                 h('div', { class: 'pnp-viewer-title' },
-                    h('strong', {}, `${items.length} image(s) from ${set.from}`),
+                    h('strong', {}, `${describeSet({ items })} ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from}`),
                     h('span', {}, ` · ${timeAgo(set.created)}`)),
                 counter, download, close),
             h('div', { class: 'pnp-viewer-body' },
                 list,
-                h('div', { class: 'pnp-viewer-stage' }, big, caption)));
+                h('div', { class: 'pnp-viewer-stage' }, big, doc, none, caption)));
         const backdrop = h('div', { class: 'pnp-viewer-backdrop', onclick: (e) => { if (e.target === backdrop) done(); } }, dialog);
 
         function select(i) {
             index = (i + items.length) % items.length;
             const it = items[index];
-            big.src = urls[index];
-            big.onload = () => {
-                caption.textContent = `${it.name} · ${big.naturalWidth} × ${big.naturalHeight} px · ${formatBytes(it.blob.size)}`;
-            };
-            caption.textContent = it.name;
+            const image = isImage(it), pdf = typeOf(it) === 'application/pdf';
+            big.hidden = !image;
+            doc.hidden = !pdf;
+            none.hidden = image || pdf;
+            big.onload = null;
+            caption.textContent = `${it.name} · ${formatBytes(it.blob.size)}`;
+            if (image) {
+                big.onload = () => {
+                    caption.textContent = `${it.name} · ${big.naturalWidth} × ${big.naturalHeight} px · ${formatBytes(it.blob.size)}`;
+                };
+                big.src = urls[index];
+            } else {
+                big.removeAttribute('src');
+            }
+            if (pdf) doc.src = urls[index];
+            else doc.removeAttribute('src');
             counter.textContent = `${index + 1} / ${items.length}`;
             thumbs.forEach((t, j) => {
                 t.classList.toggle('selected', j === index);
@@ -1027,13 +1157,18 @@ ${content(([x, y]) => [x - m, y - m])}
 
     // ---------------------------------------------------------------- dropzone
 
-    function dropzone(zone, { input, onFiles, accept }) {
-        const matches = (f) => !accept || accept.some((a) => (a.endsWith('/*') ? f.type.startsWith(a.slice(0, -1)) : f.type === a || f.name.toLowerCase().endsWith(a)));
+    // Files taken in are recorded as the tool's input (record: false to skip).
+    // The zone also gets a "Pick from Inputs & outputs" button (pick: false to skip).
+    function dropzone(zone, { input, onFiles, accept, record = true, pick = true }) {
+        const accepts = acceptMatcher(accept);
+        const matches = (f) => accepts(f.name, f.type);
         const deliver = (fileList) => {
             const files = [...fileList];
             const ok = files.filter(matches);
             if (ok.length < files.length) toast(`Skipped ${files.length - ok.length} unsupported file(s).`, 'error');
-            if (ok.length) onFiles(ok);
+            if (!ok.length) return;
+            if (record) recordFiles({ kind: 'input', items: ok.map((f) => ({ name: f.name, blob: f })) });
+            onFiles(ok);
         };
         zone.addEventListener('click', (e) => {
             if (e.target === input || e.target.closest('button, a')) return;
@@ -1053,6 +1188,12 @@ ${content(([x, y]) => [x - m, y - m])}
             zone.classList.remove('dragover');
             deliver(e.dataTransfer.files);
         });
+        if (pick) {
+            const picker = filePicker(zone, { accept, onFiles: (files) => deliver(files) });
+            // Clicks in the picker must not open the zone's file chooser.
+            picker.addEventListener('click', (e) => e.stopPropagation());
+            picker.addEventListener('keydown', (e) => e.stopPropagation());
+        }
     }
 
     // ---------------------------------------------------------------- project
@@ -1088,7 +1229,7 @@ ${content(([x, y]) => [x - m, y - m])}
             entries.unshift({ name: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
             const blob = await zip.create(entries);
             const stamp = new Date().toISOString().slice(0, 10);
-            downloadBlob(blob, `${(hooks.fileName && hooks.fileName()) || tool}-${stamp}.pnp`);
+            downloadBlob(blob, `${(hooks.fileName && hooks.fileName()) || tool}-${stamp}.pnp`, { record: false });
             hooks.markSaved && hooks.markSaved();
             toast('Project saved.', 'success');
         }
@@ -1129,8 +1270,20 @@ ${content(([x, y]) => [x - m, y - m])}
             input.click();
         }
 
+        // Start over: the page reloads without its loaded files and work;
+        // settings stay (Reset restores those).
+        // This page's entries in Inputs & outputs go too.
+        async function newProject() {
+            const unsaved = guards.some((fn) => { try { return fn(); } catch (err) { return false; } });
+            if (unsaved && !confirm('Discard the current work and start a new project?')) return;
+            try { await handoff.removeFromPage(location.pathname); } catch (err) { /* IndexedDB unavailable */ }
+            guardBypass = true;
+            location.href = location.pathname;
+        }
+
         return {
             register,
+            newProject,
             save: () => save().catch((err) => { console.error(err); toast(`Could not save project: ${err.message}`, 'error'); }),
             load,
             openPicker,
@@ -1164,6 +1317,7 @@ ${content(([x, y]) => [x - m, y - m])}
                         onclick: () => units.set(u),
                     }, u))),
                 projectButtons ? [
+                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.newProject(), title: 'Start a new, empty project: clears the loaded files and this tool’s Inputs & outputs (settings are kept)' }, 'New'),
                     h('button', { type: 'button', class: 'pnp-action', onclick: () => project.openPicker(), title: 'Open a saved .pnp project' }, 'Open'),
                     h('button', { type: 'button', class: 'pnp-action', onclick: () => project.save(), title: 'Save settings and loaded files as a .pnp project' }, 'Save'),
                 ] : null,
@@ -1176,6 +1330,9 @@ ${content(([x, y]) => [x - m, y - m])}
                     },
                 }, 'Reset')));
         header.prepend(nav);
+        // The heading shows the description on one line, cut to fit.
+        const subtitle = header.querySelector(':scope > .subtitle');
+        if (subtitle && !subtitle.title) subtitle.title = subtitle.textContent.trim();
     }
 
     // ---------------------------------------------------------------- offline
@@ -1213,6 +1370,7 @@ ${content(([x, y]) => [x - m, y - m])}
      */
     function init(opts) {
         const toolId = opts.tool;
+        currentTool = TOOLS.find((t) => t.id === toolId) || null;
         project._setTool(toolId);
         units.scan();
         units.relabel();
@@ -1240,10 +1398,11 @@ ${content(([x, y]) => [x - m, y - m])}
         inDeadMargin,
         handoff,
         sendMenu,
-        importButton,
+        filePicker,
         outputPreviewButton,
         previewOutput,
         itemsToFiles,
+        recordFiles,
         dropzone,
         project,
         guard,

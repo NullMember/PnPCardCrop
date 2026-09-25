@@ -202,6 +202,41 @@
     display: none;
 }
 
+.pnp-popover.pnp-popover-floating {
+    position: fixed;
+    right: auto;
+    z-index: 1000;
+    text-align: left;
+    cursor: default;
+}
+
+/* "Pick from Inputs & outputs" inside a drop zone. */
+.dropzone .pnp-pick {
+    margin-top: 8px;
+}
+
+.pnp-pick-btn {
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pnp-pick-btn:hover {
+    border-color: var(--accent);
+    background: var(--surface2);
+}
+
+.pnp-popover-browse {
+    border-bottom: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+}
+
 .pnp-popover-row {
     display: flex;
     align-items: stretch;
@@ -241,6 +276,15 @@
 .pnp-popover-empty {
     padding: 10px;
     font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.pnp-popover-heading {
+    padding: 8px 10px 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: var(--text-dim);
 }
 
@@ -458,6 +502,42 @@
     object-fit: contain;
 }
 
+.pnp-viewer-img[hidden],
+.pnp-viewer-doc[hidden],
+.pnp-viewer-none[hidden] {
+    display: none;
+}
+
+.pnp-viewer-doc {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: none;
+    background: #ffffff;
+}
+
+.pnp-viewer-none {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+}
+
+.pnp-viewer-filetype {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-dim);
+}
+
 .pnp-viewer-caption {
     padding: 3px 10px;
     border-radius: 999px;
@@ -549,6 +629,49 @@
     display: flex;
     gap: 16px;
     margin-top: 6px;
+}
+
+/* ---- One-line tool heading ------------------------------------------------ */
+
+/* Title, description and page links share one row under the top bar. The
+   description is cut to fit (the full text is its tooltip, set by topBar()). */
+header:has(> h1) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 14px;
+    padding-top: 14px;
+    padding-bottom: 12px;
+}
+
+header:has(> h1) > .pnp-topbar {
+    flex: 0 0 100%;
+}
+
+header:has(> h1) > h1 {
+    flex: none;
+    margin: 0;
+    font-size: 1.15rem;
+    white-space: nowrap;
+}
+
+header:has(> h1) > .subtitle {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+header:has(> h1) > .tool-nav {
+    flex: none;
+    margin: 0 0 0 auto;
+}
+
+@media (max-width: 700px) {
+    header:has(> h1) > .subtitle {
+        display: none;
+    }
 }
 
 .nav-link {

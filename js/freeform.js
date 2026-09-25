@@ -264,7 +264,6 @@
     accept: ['image/*', 'application/pdf', '.pdf'],
     onFiles: addFiles,
   });
-  PnP.importButton($('importSlot'), addFiles);
 
   let projectFiles = [];
   PnP.init({

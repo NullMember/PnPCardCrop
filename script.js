@@ -735,6 +735,7 @@ cropForm.addEventListener('submit', async (event) => {
     lastCrop.front.sort(byName);
     lastCrop.back.sort(byName);
     sendMenu.setEnabled(lastCrop.front.length + lastCrop.back.length > 0);
+    PnP.recordFiles({ items: croppedItems() }); // shows up under Inputs & outputs
 
     // Generate and download zip files
     if (isDuplex || isDuplexShort || isFoldVertical || isFoldHorizontal || isBackLast) {
@@ -780,13 +781,17 @@ PnP.dropzone(document.getElementById('pdfDropZone'), {
     }),
 });
 
+function croppedItems() {
+    return [
+        ...lastCrop.front.map((c) => ({ ...c, role: 'front' })),
+        ...lastCrop.back.map((c) => ({ ...c, role: 'back' })),
+    ];
+}
+
 const sendMenu = PnP.sendMenu(document.getElementById('sendSlot'), {
     from: 'CardCrop',
     targets: ['PnPAlign', 'PnPBleed', 'PnPLayout', 'PnPBooklet'],
-    getItems: () => [
-        ...lastCrop.front.map((c) => ({ ...c, role: 'front' })),
-        ...lastCrop.back.map((c) => ({ ...c, role: 'back' })),
-    ],
+    getItems: croppedItems,
 });
 sendMenu.setEnabled(false);
 

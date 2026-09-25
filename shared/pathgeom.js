@@ -138,15 +138,20 @@ const PathGeom = (() => {
     }
 
     // Catmull-Rom style handles through the nodes (tension 1/6 of neighbour span).
+    // Catmull-Rom tangents (k × the neighbour span), but each handle no longer
+    // than k × 2 of its own side: where a long edge meets a short one, the
+    // short side's handle would otherwise overshoot it and spike the curve.
     function smoothHandles(nodes, closed, k = 1 / 6) {
         const n = nodes.length;
         return nodes.map((p, i) => {
             const prev = nodes[closed ? (i - 1 + n) % n : Math.max(0, i - 1)];
             const next = nodes[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
             const tx = (next.x - prev.x) * k, ty = (next.y - prev.y) * k;
+            const t = Math.hypot(tx, ty) || 1;
+            const along = (side) => Math.min(1, (2 * k * Math.hypot(side.x - p.x, side.y - p.y)) / t);
             const out = { x: p.x, y: p.y, smooth: true };
-            if (closed || i > 0) out.hi = { x: p.x - tx, y: p.y - ty };
-            if (closed || i < n - 1) out.ho = { x: p.x + tx, y: p.y + ty };
+            if (closed || i > 0) { const f = along(prev); out.hi = { x: p.x - tx * f, y: p.y - ty * f }; }
+            if (closed || i < n - 1) { const f = along(next); out.ho = { x: p.x + tx * f, y: p.y + ty * f }; }
             return out;
         });
     }

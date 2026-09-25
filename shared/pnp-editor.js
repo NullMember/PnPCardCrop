@@ -197,10 +197,31 @@ const PnPEditor = (() => {
           </div>
         
         </div>` : '';
-    return `${traceOpts}
-        <button type="button" id="clearGuidesBtn" class="btn-secondary btn-small">Clear guides</button>
-        ${o.importSvg ? `<button type="button" id="importSvgBtn" class="btn-secondary btn-small">Import SVG…</button>
-        <input type="file" id="importSvgInput" accept=".svg,image/svg+xml" hidden>` : ''}`;
+    // Shown once the reference image turns out to have transparent pixels.
+    const layerOptions = o.layers.map((l) => `<option value="${l.id}">${l.label}</option>`).join('');
+    const alphaOpts = o.tools.includes('trace') ? `
+        <div class="alpha-panel" id="alphaPanel" hidden>
+          <div class="editor-subtitle">Transparent image</div>
+          <div class="input-hint">Turn the edges between transparent and opaque pixels into shapes, or pick the Trace tool (T) and click one object.</div>
+          <div class="control-group"${o.layers.length === 1 ? ' hidden' : ''}>
+            <label for="alphaLayer">Put outlines on</label>
+            <select id="alphaLayer">${layerOptions}</select>
+          </div>
+          <label class="inline"><input type="checkbox" id="alphaHoles" checked> Include holes (transparent areas inside)</label>
+          <button type="button" id="alphaTraceBtn" class="btn-secondary btn-small">Outline transparent edges</button>
+        </div>` : '';
+    const importOpts = o.importSvg ? `
+        <div class="control-group editor-import">
+          <div class="editor-subtitle">Import SVG</div>
+          <div class="dropzone dropzone-compact" id="importSvgDrop">
+            <div class="dz-title">Drop SVG files here</div>
+            <div>or click to browse</div>
+            <input type="file" id="importSvgInput" accept=".svg,image/svg+xml" multiple hidden>
+          </div>
+          <div id="importList" class="import-list"></div>
+        </div>` : '';
+    return `${traceOpts}${alphaOpts}
+        <button type="button" id="clearGuidesBtn" class="btn-secondary btn-small">Clear guides</button>${importOpts}`;
   }
 
   function dialogsMarkup(o) {
@@ -363,8 +384,13 @@ const PnPEditor = (() => {
       rulerH: $('rulerH'),
       rulerV: $('rulerV'),
       clearGuidesBtn: $('clearGuidesBtn'),
-      importSvgBtn: $('importSvgBtn'),
+      importSvgDrop: $('importSvgDrop'),
       importSvgInput: $('importSvgInput'),
+      importList: $('importList'),
+      alphaPanel: $('alphaPanel'),
+      alphaLayer: $('alphaLayer'),
+      alphaHoles: $('alphaHoles'),
+      alphaTraceBtn: $('alphaTraceBtn'),
       zoomLevel: $('zoomLevel'),
       snapBtn: $('snapBtn'),
       traceTolerance: $('traceTolerance'),
@@ -379,6 +405,7 @@ const PnPEditor = (() => {
       cardH: o.docSize.h,
       imageDataUrl: null,
       imageVisible: true,
+      imageHasAlpha: false,
       tool: 'select',
       activeLayer: o.layers[0].id,
       layerVisible: Object.fromEntries(o.layers.map((l) => [l.id, true])),
@@ -733,7 +760,7 @@ const PnPEditor = (() => {
 
     // ---------- SVG canvas setup ----------
 
-    let svg, layerGroups = {}, imageEl, overlayGroup, gridGroup;
+    let svg, layerGroups = {}, imageEl, bgRect, overlayGroup, gridGroup;
     const svgDblClickHandlers = [];
 
     // Grid lines every gridSize mm with a stronger line every 5th; lines closer
@@ -762,11 +789,13 @@ const PnPEditor = (() => {
       svg = document.createElementNS(SVG_NS, 'svg');
       svg.setAttribute('id', 'canvasSvg');
 
-      const bg = document.createElementNS(SVG_NS, 'rect');
-      bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
-      bg.setAttribute('fill', '#ffffff');
-      bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%');
-      svg.appendChild(bg);
+      // White paper; hidden for images with transparency so the canvas
+      // checkerboard shows through their transparent pixels.
+      bgRect = document.createElementNS(SVG_NS, 'rect');
+      bgRect.setAttribute('x', '0'); bgRect.setAttribute('y', '0');
+      bgRect.setAttribute('fill', '#ffffff');
+      bgRect.setAttribute('width', '100%'); bgRect.setAttribute('height', '100%');
+      svg.appendChild(bgRect);
 
       imageEl = document.createElementNS(SVG_NS, 'image');
       imageEl.setAttribute('x', '0');
@@ -1116,21 +1145,28 @@ const PnPEditor = (() => {
       g.setAttribute('data-id', shape.id);
       g.classList.add('shape-el');
       if (shape._preview) g.classList.add('preview');
-      const prim = document.createElementNS(SVG_NS, d.tag);
-      Object.entries(d.attrs).forEach(([k, v]) => prim.setAttribute(k, v));
+      // Three copies of the outline: a light halo so the line reads on dark or
+      // busy artwork, the line itself, and a wide invisible stroke to click.
+      // Widths are screen pixels at any zoom.
+      const part = (cls) => {
+        const el = document.createElementNS(SVG_NS, d.tag);
+        Object.entries(d.attrs).forEach(([k, v]) => el.setAttribute(k, v));
+        el.setAttribute('fill', 'none');
+        el.setAttribute('vector-effect', 'non-scaling-stroke');
+        el.classList.add(cls);
+        g.appendChild(el);
+        return el;
+      };
+      part('shape-halo');
+      const line = part('shape-line');
+      line.setAttribute('stroke', state.layerColors[shape.layer]);
+      const hit = part('shape-hit');
       const closed = shape.type === 'rect' || shape.type === 'ellipse' || (shape.type === 'path' && shape.closed);
       if (o.regionFill && closed) {
-        prim.setAttribute('fill', state.layerColors[shape.layer]);
-        prim.setAttribute('fill-opacity', String(o.regionFill));
-        prim.style.pointerEvents = 'visiblePainted';
-      } else {
-        prim.setAttribute('fill', 'none');
+        line.setAttribute('fill', state.layerColors[shape.layer]);
+        line.setAttribute('fill-opacity', String(o.regionFill));
+        hit.style.pointerEvents = 'visible';
       }
-      prim.setAttribute('stroke', state.layerColors[shape.layer]);
-      prim.setAttribute('stroke-width', '0.15');
-      prim.setAttribute('vector-effect', 'non-scaling-stroke');
-      prim.classList.add('shape-hit');
-      g.appendChild(prim);
       return g;
     }
 
@@ -1269,8 +1305,8 @@ const PnPEditor = (() => {
         outline.setAttribute('points', corners.map((p) => `${p.x},${p.y}`).join(' '));
         outline.setAttribute('fill', 'none');
         outline.setAttribute('stroke', '#4a90d9');
-        outline.setAttribute('stroke-width', '0.3');
-        outline.setAttribute('stroke-dasharray', '1.2,1');
+        outline.setAttribute('stroke-width', '1.25');
+        outline.setAttribute('stroke-dasharray', '5,4');
         outline.setAttribute('vector-effect', 'non-scaling-stroke');
         overlayGroup.appendChild(outline);
       }
@@ -1294,7 +1330,7 @@ const PnPEditor = (() => {
         connector.setAttribute('x1', nWorld.x); connector.setAttribute('y1', nWorld.y);
         connector.setAttribute('x2', rotWorld.x); connector.setAttribute('y2', rotWorld.y);
         connector.setAttribute('stroke', '#4a90d9');
-        connector.setAttribute('stroke-width', '0.3');
+        connector.setAttribute('stroke-width', '1.25');
         connector.setAttribute('vector-effect', 'non-scaling-stroke');
         overlayGroup.appendChild(connector);
 
@@ -1416,6 +1452,7 @@ const PnPEditor = (() => {
         s.id = state.nextId++;
         s.x += offset;
         s.y += offset;
+        delete s.source;
         state.shapes.push(s);
         newIds.push(s.id);
       });
@@ -1976,6 +2013,76 @@ const PnPEditor = (() => {
       pushHistory();
     }
 
+    // ---------- transparent reference images ----------
+    //
+    // Images with transparent pixels get a checkerboard behind them, and
+    // their transparent / opaque borders can become shapes in one go.
+
+    const ALPHA_OPAQUE = 128;
+
+    function pixelsHaveAlpha(px) {
+      for (let i = 3; i < px.data.length; i += 4) if (px.data[i] < 250) return true;
+      return false;
+    }
+
+    function showImageAlpha(hasAlpha) {
+      state.imageHasAlpha = hasAlpha;
+      const checker = hasAlpha && state.imageVisible;
+      svg.classList.toggle('has-alpha', checker);
+      bgRect.style.display = checker ? 'none' : '';
+      if (els.alphaPanel) els.alphaPanel.hidden = !hasAlpha;
+    }
+
+    function touchesEdge(mask, w, h) {
+      for (let x = 0; x < w; x++) if (mask[x] || mask[(h - 1) * w + x]) return true;
+      for (let y = 0; y < h; y++) if (mask[y * w] || mask[y * w + w - 1]) return true;
+      return false;
+    }
+
+    // Opaque regions become closed outlines; with holes, transparent regions
+    // enclosed by opaque pixels do too. Regions under minArea mm² are specks.
+    async function traceTransparency({ layer, holes = true, smoothing, minArea = 1 } = {}) {
+      const px = await referencePixels();
+      if (!px || !pixelsHaveAlpha(px)) return [];
+      const { w, h } = px;
+      const n = w * h;
+      const opaque = new Uint8Array(n);
+      for (let i = 0; i < n; i++) opaque[i] = px.data[i * 4 + 3] >= ALPHA_OPAQUE ? 1 : 0;
+      const sx = state.cardW / w, sy = state.cardH / h;
+      const minPx = Math.max(4, minArea / (sx * sy));
+      const tol = Math.max(0.05, smoothing != null ? smoothing : parseFloat(els.traceSmoothing && els.traceSmoothing.value) || 0.3);
+      const regions = Raster.components(opaque, w, h, minPx);
+      if (holes) {
+        const clear = opaque.map((v) => 1 - v);
+        // Transparency touching the image edge is the outside, not a hole.
+        Raster.components(clear, w, h, minPx).forEach((c) => { if (!touchesEdge(c.mask, w, h)) regions.push(c); });
+      }
+      const created = [];
+      regions.forEach(({ mask }) => {
+        const outline = Raster.traceOuter(mask, w, h).map((q) => ({ x: q.x * sx, y: q.y * sy }));
+        const path = PathGeom.fitPath(outline, true, tol, 45);
+        if (path.nodes.length < 3) return;
+        const shape = makePathShape(path, layer);
+        state.shapes.push(shape);
+        created.push(shape.id);
+      });
+      if (created.length) {
+        selectShapes(created);
+        fullRender();
+        pushHistory();
+      }
+      return created;
+    }
+
+    function wireAlpha() {
+      if (!els.alphaTraceBtn) return;
+      els.alphaTraceBtn.addEventListener('click', async () => {
+        const ids = await traceTransparency({ layer: els.alphaLayer.value, holes: els.alphaHoles.checked });
+        if (ids.length) PnP.toast(`Created ${ids.length} outline${ids.length === 1 ? '' : 's'}.`, 'success');
+        else PnP.toast('No transparent edges found.', 'error');
+      });
+    }
+
     // ---------- node editing ----------
     //
     // The node tool edits one path: drag nodes or Bézier handles, double-click
@@ -2178,7 +2285,7 @@ const PnPEditor = (() => {
         el.setAttribute('class', 'draft');
         el.setAttribute('fill', 'none');
         el.setAttribute('stroke', color);
-        el.setAttribute('stroke-width', '0.2');
+        el.setAttribute('stroke-width', '2.5');
         if (dashed) el.setAttribute('stroke-dasharray', '1,0.6');
         el.setAttribute('vector-effect', 'non-scaling-stroke');
         overlayGroup.appendChild(el);
@@ -2259,6 +2366,7 @@ const PnPEditor = (() => {
       state.selectedIds = [...new Set(ids)];
       refreshProps();
       renderOverlay();
+      renderImportList();
     }
 
     function selectShape(id) {
@@ -2451,6 +2559,7 @@ const PnPEditor = (() => {
         c.id = state.nextId++;
         c.x += dx; c.y += dy;
         delete c._preview;
+        delete c.source;
         return c;
       });
     }
@@ -2708,7 +2817,15 @@ const PnPEditor = (() => {
       return state.activeLayer;
     }
 
-    function importSvgText(text) {
+    // Imported shapes remember their file as source: { id, name }, so the
+    // import list can select or remove each file's shapes, even after undo
+    // or reloading a project. Copies drop it (they are new shapes).
+    function nextImportId() {
+      return state.shapes.reduce((m, s) => Math.max(m, (s.source && s.source.id) || 0), 0) + 1;
+    }
+
+    function importSvgText(text, name = 'SVG') {
+      const source = { id: nextImportId(), name };
       const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
       const root = doc.documentElement;
       if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) {
@@ -2739,6 +2856,7 @@ const PnPEditor = (() => {
             const b = PathGeom.bounds(PathGeom.flatten(path));
             if (b.w < 0.01 && b.h < 0.01) return;
             const shape = makePathShape(path, layer);
+            shape.source = { ...source };
             state.shapes.push(shape);
             created.push(shape.id);
           });
@@ -2749,26 +2867,89 @@ const PnPEditor = (() => {
       return created;
     }
 
-    function wireImport() {
-      els.importSvgBtn.addEventListener('click', () => els.importSvgInput.click());
-      els.importSvgInput.addEventListener('change', async () => {
-        const file = els.importSvgInput.files[0];
-        els.importSvgInput.value = '';
-        if (!file) return;
+    async function importSvgFiles(files) {
+      const ids = [];
+      for (const file of files) {
         try {
-          const ids = importSvgText(await file.text());
-          if (!ids.length) {
-            PnP.toast('No shapes found in that SVG.', 'error');
-            return;
-          }
+          const created = importSvgText(await file.text(), file.name);
+          if (!created.length) PnP.toast(`No shapes found in ${file.name}.`, 'error');
+          ids.push(...created);
+        } catch (err) {
+          PnP.toast(`${file.name}: ${err.message}`, 'error');
+        }
+      }
+      if (!ids.length) return;
+      selectShapes(ids);
+      fullRender();
+      pushHistory();
+      PnP.toast(`Imported ${ids.length} shape${ids.length === 1 ? '' : 's'}.`, 'success');
+    }
+
+    function wireImport() {
+      PnP.dropzone(els.importSvgDrop, {
+        input: els.importSvgInput,
+        accept: ['image/svg+xml', '.svg'],
+        onFiles: importSvgFiles,
+      });
+      els.importList.addEventListener('click', (evt) => {
+        const btn = evt.target.closest('[data-import-action]');
+        if (!btn) return;
+        const { importAction: action, importId, shapeId } = btn.dataset;
+        const ids = shapeId
+          ? [+shapeId]
+          : state.shapes.filter((s) => s.source && s.source.id === +importId).map((s) => s.id);
+        if (action === 'select') {
+          if (state.tool !== 'select') setTool('select');
           selectShapes(ids);
+        } else if (action === 'remove') {
+          const idSet = new Set(ids);
+          state.shapes = state.shapes.filter((s) => !idSet.has(s.id));
+          state.selectedIds = state.selectedIds.filter((id) => !idSet.has(id));
           fullRender();
           pushHistory();
-          PnP.toast(`Imported ${ids.length} shape${ids.length === 1 ? '' : 's'}.`, 'success');
-        } catch (err) {
-          PnP.toast(err.message, 'error');
         }
       });
+      els.importList.addEventListener('toggle', (evt) => {
+        const id = +evt.target.dataset.importId;
+        if (evt.target.open) openImports.add(id); else openImports.delete(id);
+      }, true);
+    }
+
+    const openImports = new Set(); // import ids whose element list is expanded
+
+    const SHAPE_NAMES = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', path: 'Path' };
+
+    // One row per imported file (select all / remove all), expandable to one
+    // row per shape. Rebuilt on every render; selection is highlighted.
+    function renderImportList() {
+      if (!els.importList) return;
+      const groups = new Map();
+      state.shapes.forEach((s) => {
+        if (!s.source || s._preview) return;
+        if (!groups.has(s.source.id)) groups.set(s.source.id, { name: s.source.name, shapes: [] });
+        groups.get(s.source.id).shapes.push(s);
+      });
+      const selected = new Set(state.selectedIds);
+      const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+      const layerLabel = (id) => (o.layers.find((l) => l.id === id) || { label: id }).label;
+      els.importList.innerHTML = [...groups].map(([id, g]) => {
+        const allSel = g.shapes.every((s) => selected.has(s.id));
+        const rows = g.shapes.map((s, i) => `
+            <div class="import-row${selected.has(s.id) ? ' selected' : ''}">
+              <span class="import-swatch" style="background:${state.layerColors[s.layer]}"></span>
+              <button type="button" class="import-name" data-import-action="select" data-shape-id="${s.id}" title="Select">${SHAPE_NAMES[s.type] || s.type} ${i + 1} <span class="import-layer">${esc(layerLabel(s.layer))}</span></button>
+              <button type="button" class="remove-btn" data-import-action="remove" data-shape-id="${s.id}" title="Remove this shape" aria-label="Remove this shape">&times;</button>
+            </div>`).join('');
+        return `
+          <details class="import-file${allSel ? ' selected' : ''}" data-import-id="${id}"${openImports.has(id) ? ' open' : ''}>
+            <summary>
+              <button type="button" class="import-name" data-import-action="select" data-import-id="${id}" title="Select every shape from this file">${esc(g.name)}</button>
+              <span class="import-count">${g.shapes.length}</span>
+              <button type="button" class="remove-btn" data-import-action="remove" data-import-id="${id}" title="Remove every shape from this file" aria-label="Remove every shape from this file">&times;</button>
+            </summary>
+            <div class="import-rows">${rows}</div>
+          </details>`;
+      }).join('');
     }
 
     // ---------- full render ----------
@@ -2777,6 +2958,7 @@ const PnPEditor = (() => {
       renderShapes();
       renderOverlay();
       refreshProps();
+      renderImportList();
     }
 
     // ---------- history ----------
@@ -2985,6 +3167,7 @@ const PnPEditor = (() => {
     wireArrange();
     wireRulers();
     if (o.importSvg) wireImport();
+    wireAlpha();
     setSnap(view.snap);
     setGrid(view.grid);
     updateCursor();
@@ -3034,24 +3217,40 @@ const PnPEditor = (() => {
         traceCache = null;
         if (url) imageEl.setAttribute('href', url);
         else imageEl.removeAttribute('href');
+        showImageAlpha(false);
+        // Check for transparency once the pixels are decoded (unless the
+        // image changed again meanwhile).
+        if (url) referencePixels().then((px) => { if (px && state.imageDataUrl === url) showImageAlpha(pixelsHaveAlpha(px)); });
       },
       setImageVisible(visible) {
         state.imageVisible = visible;
         imageEl.style.display = visible ? '' : 'none';
+        showImageAlpha(state.imageHasAlpha);
       },
       getShapes() {
         return JSON.parse(JSON.stringify(state.shapes.filter((s) => !s._preview)));
       },
       // Replace every shape (e.g. loading a project or switching pages).
-      setShapes(shapes, { resetHistory = false } = {}) {
+      // history: a getHistory() result to restore that document's undo stack.
+      setShapes(shapes, { resetHistory = false, history: saved = null } = {}) {
         state.shapes = JSON.parse(JSON.stringify(shapes || [])).map(migrateShape);
         state.nextId = state.shapes.reduce((m, s) => Math.max(m, s.id || 0), 0) + 1;
         state.selectedIds = [];
         if (nodeEdit) nodeEdit = null;
+        if (saved && saved.entries && saved.entries[saved.index]) {
+          history = saved.entries.slice();
+          historyIndex = saved.index;
+          state.nextId = Math.max(state.nextId, JSON.parse(history[historyIndex]).nextId || 0);
+          fullRender();
+          changeListeners.forEach((fn) => fn());
+          return;
+        }
         if (resetHistory) { history = []; historyIndex = -1; }
         fullRender();
         pushHistory();
       },
+      // The undo stack, to keep one per document when the host switches between them.
+      getHistory: () => ({ entries: history.slice(), index: historyIndex }),
       // Add shapes (ids are assigned); returns the new ids and selects them.
       addShapes(shapes) {
         const ids = shapes.map((s) => {
@@ -3079,12 +3278,14 @@ const PnPEditor = (() => {
         renderShapes();
       },
       exportSvg: (layers, mirror) => buildExportSVG(layers || LAYER_IDS, mirror),
-      importSvg(text) {
-        const ids = importSvgText(text);
+      importSvg(text, name) {
+        const ids = importSvgText(text, name);
         if (ids.length) { selectShapes(ids); fullRender(); pushHistory(); }
         return ids;
       },
       detectObjects,
+      traceTransparency,
+      get hasTransparency() { return state.imageHasAlpha; },
       fit: () => fitZoom(),
       setTool: (tool) => setTool(tool),
       onChange: (fn) => changeListeners.push(fn),

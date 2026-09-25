@@ -173,15 +173,33 @@ circle.handle-move {
     cursor: move;
 }
 
+.shape-halo {
+    stroke: #ffffff;
+    stroke-opacity: 0.55;
+    stroke-width: 5;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+.shape-line {
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+/* Wide invisible stroke, so thin lines are easy to pick. */
 .shape-hit {
+    stroke: transparent;
+    stroke-width: 10;
     cursor: move;
     pointer-events: stroke;
 }
 
 .snap-guide {
     stroke: #ff3fb0;
-    stroke-width: 0.5;
-    stroke-dasharray: 2,1.4;
+    stroke-width: 1;
+    stroke-dasharray: 4,3;
     pointer-events: none;
 }
 
@@ -196,15 +214,15 @@ circle.handle-move {
 .multi-select-outline {
     fill: none;
     stroke: #4a90d9;
-    stroke-width: 0.4;
-    stroke-dasharray: 1.2,1;
+    stroke-width: 1.25;
+    stroke-dasharray: 5,4;
     pointer-events: none;
 }
 
 .group-select-outline {
     fill: none;
     stroke: #4a90d9;
-    stroke-width: 0.4;
+    stroke-width: 1.25;
     pointer-events: none;
 }
 
@@ -621,4 +639,158 @@ circle.handle-move {
     flex-direction: column;
     gap: 8px;
     margin-top: 10px;
+}
+
+.editor-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+}
+
+/* ---- Transparent reference images ---------------------------------------------- */
+
+/* The paper is always light, so the checkerboard is too, in both themes. */
+#canvasSvg.has-alpha {
+    background-color: #ffffff;
+    background-image:
+        linear-gradient(45deg, #cfd2d8 25%, transparent 25%),
+        linear-gradient(-45deg, #cfd2d8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #cfd2d8 75%),
+        linear-gradient(-45deg, transparent 75%, #cfd2d8 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
+.alpha-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.alpha-panel[hidden] {
+    display: none;
+}
+
+.alpha-panel .control-group {
+    margin-bottom: 0;
+}
+
+/* ---- SVG import ------------------------------------------------------------------ */
+
+.editor-import {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.import-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.import-file {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.import-file.selected {
+    border-color: var(--accent);
+}
+
+.import-file summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    cursor: pointer;
+}
+
+.import-file summary::before {
+    content: '▸';
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+.import-file[open] summary::before {
+    content: '▾';
+}
+
+.import-file summary::-webkit-details-marker {
+    display: none;
+}
+
+.import-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 2px 0;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.import-name:hover {
+    color: var(--accent);
+}
+
+.import-count,
+.import-layer {
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+.import-rows {
+    display: flex;
+    flex-direction: column;
+    padding: 0 6px 6px 22px;
+}
+
+.import-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+.import-row.selected {
+    background: var(--surface2);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.import-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.import-list .remove-btn {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+
+.import-list .remove-btn:hover {
+    color: var(--danger);
 }

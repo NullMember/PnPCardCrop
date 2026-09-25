@@ -265,6 +265,10 @@ header .subtitle {
     gap: 5px;
 }
 
+.control-group[hidden] {
+    display: none;
+}
+
 .control-group label {
     font-weight: 500;
     color: var(--text-dim);
@@ -424,6 +428,11 @@ input[type="color"] {
 .dropzone.dragover {
     border-color: var(--accent);
     background: rgba(108, 140, 255, 0.06);
+}
+
+.dropzone.dropzone-compact {
+    padding: 12px 10px;
+    margin-bottom: 8px;
 }
 
 .dropzone input[type="file"] {
