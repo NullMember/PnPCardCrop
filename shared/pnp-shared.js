@@ -335,8 +335,14 @@
     // Fill `select` with presets and keep it in sync with the two mm inputs:
     // choosing a preset writes the inputs; editing an input selects the
     // matching preset (or "Custom").
+    //
+    // Card presets also get a ⇄ button between the inputs that swaps width
+    // and height, for landscape cards. A card preset matches in either
+    // orientation, and choosing one keeps the current orientation.
     function bindPreset(select, wInput, hInput, list) {
+        const rotatable = list === 'card';
         if (typeof list === 'string') list = presets[list];
+        const read = (el) => parseFloat(nativeValue.get.call(el));
         const render = () => {
             const current = select.value;
             select.innerHTML = '';
@@ -344,10 +350,11 @@
             select.append(h('option', { value: 'custom' }, 'Custom'));
             if (current) select.value = current;
         };
+        const same = (a, b) => Math.abs(a - b) < 0.05;
         const syncFromInputs = () => {
-            const w = parseFloat(nativeValue.get.call(wInput));
-            const hh = parseFloat(nativeValue.get.call(hInput));
-            const match = list.find((p) => Math.abs(p.w - w) < 0.05 && Math.abs(p.h - hh) < 0.05);
+            const w = read(wInput);
+            const hh = read(hInput);
+            const match = list.find((p) => (same(p.w, w) && same(p.h, hh)) || (rotatable && same(p.w, hh) && same(p.h, w)));
             select.value = match ? match.id : 'custom';
         };
         render();
@@ -355,14 +362,41 @@
         select.addEventListener('change', () => {
             const p = list.find((x) => x.id === select.value);
             if (!p) return;
-            setFieldValue(wInput, p.w);
-            setFieldValue(hInput, p.h);
+            const landscape = rotatable && read(wInput) > read(hInput);
+            setFieldValue(wInput, landscape ? p.h : p.w);
+            setFieldValue(hInput, landscape ? p.w : p.h);
         });
         [wInput, hInput].forEach((el) => el.addEventListener('input', syncFromInputs));
         units.onChange(() => { render(); syncFromInputs(); });
         settings.onApply(syncFromInputs);
         select.dataset.persist = 'false'; // derived from the inputs
+        if (rotatable) swapButton(wInput, hInput);
         return { sync: syncFromInputs };
+    }
+
+    // A ⇄ button between two inputs' control groups (when they share a .row)
+    // that exchanges their values, firing the usual input/change events.
+    function swapButton(aInput, bInput) {
+        const aGroup = aInput.closest('.control-group');
+        const bGroup = bInput.closest('.control-group');
+        if (!aGroup || !bGroup || aGroup.parentElement !== bGroup.parentElement) return null;
+        const btn = h('button', {
+            type: 'button',
+            class: 'pnp-swap',
+            title: 'Swap width and height (landscape / portrait)',
+            'aria-label': 'Swap width and height',
+            onclick: () => {
+                const a = nativeValue.get.call(aInput);
+                const b = nativeValue.get.call(bInput);
+                // Set both before notifying, so listeners never see a half-swapped pair.
+                aInput.value = b;
+                bInput.value = a;
+                [aInput, bInput].forEach((el) => ['input', 'change'].forEach((type) => el.dispatchEvent(new Event(type, { bubbles: true }))));
+            },
+        }, '⇄');
+        aGroup.after(btn);
+        aGroup.parentElement.classList.add('pnp-swap-row');
+        return btn;
     }
 
     // ---------------------------------------------------------------- cutting machine
