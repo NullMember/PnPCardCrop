@@ -807,7 +807,7 @@ ${content(([x, y]) => [x - m, y - m])}
                     return;
                 }
                 await onItems(set.items, set);
-                toast(`Imported ${set.items.length} image(s) from ${set.from}.`, 'success');
+                toast(`Imported ${describeSet(set)} from ${set.from}.`, 'success');
             } catch (err) {
                 console.error(err);
                 toast(`Import failed: ${err.message}`, 'error');
