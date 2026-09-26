@@ -3158,7 +3158,7 @@ const PnPEditor = (() => {
           return `<path d="${PathGeom.toD(path, fmt)}" fill="none" stroke="${state.layerColors[s.layer]}" stroke-width="0.15"/>`;
         })
         .join('\n');
-      return `<svg xmlns="${SVG_NS}" width="${fmt(state.cardW)}mm" height="${fmt(state.cardH)}mm" viewBox="0 0 ${fmt(state.cardW)} ${fmt(state.cardH)}">\n${content}\n</svg>`;
+      return `<svg xmlns="${SVG_NS}" ${PnP.svgSize(state.cardW, state.cardH)}>\n${content}\n</svg>`;
     }
 
     // ---------- init ----------

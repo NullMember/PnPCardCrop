@@ -457,12 +457,22 @@
      * cutPath() for each line.
      *   cutSvg({ paperW, paperH, margin, content: (toGuide) => string }) -> string
      */
+    // Size attributes for an SVG drawn in millimetres (viewBox in mm). The
+    // width and height are written in inches: Cricut Design Space reads these
+    // numbers as inches whatever their unit, so "197.3mm" came in as 197.3 in
+    // (5 m, clamped to its 480 cm limit). Inches are right there and everywhere.
+    function svgSize(wMm, hMm) {
+        const mm = (v) => +v.toFixed(3);
+        const inch = (v) => +(v / MM_PER_IN).toFixed(5);
+        return `width="${inch(wMm)}in" height="${inch(hMm)}in" viewBox="0 0 ${mm(wMm)} ${mm(hMm)}"`;
+    }
+
     function cutSvg({ paperW, paperH, margin, content }) {
         const f = (v) => +v.toFixed(3);
         const m = Math.max(0, margin);
         const w = f(Math.max(0, paperW - 2 * m));
         const hh = f(Math.max(0, paperH - 2 * m));
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${hh}mm" viewBox="0 0 ${w} ${hh}">
+        return `<svg xmlns="http://www.w3.org/2000/svg" ${svgSize(w, hh)}>
   <rect x="0" y="0" width="${w}" height="${hh}" fill="none" stroke="${CUT_GUIDE_COLOR}" stroke-width="0.1"/>
 ${content(([x, y]) => [x - m, y - m])}
 </svg>
@@ -1394,6 +1404,7 @@ ${content(([x, y]) => [x - m, y - m])}
         machinePresets,
         bindMachinePreset,
         cutSvg,
+        svgSize,
         cutPath,
         inDeadMargin,
         handoff,
