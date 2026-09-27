@@ -46,7 +46,7 @@ async function imageDocument(files) {
             el.onload = () => resolve(el);
             el.onerror = () => reject(new Error(`${file.name} is not an image this browser can read`));
             el.src = url;
-        });
+        }).finally(() => URL.revokeObjectURL(url)); // the loaded image stays drawable
         const dpi = (await PnP.readImageDpi(file)) || fallbackDpi;
         pages.push({ img, width: (img.naturalWidth / dpi) * 72, height: (img.naturalHeight / dpi) * 72 });
     }
@@ -426,6 +426,18 @@ const OUTPUT_FORMATS = {
 };
 
 // Form submission for cropping the PDF
+// Cropping reads every page and card back for image encoding, so their
+// canvases live in CPU memory: a GPU canvas would be copied back in one long
+// freeze (and extra GPU work) on the first read.
+const CPU_CANVAS = { willReadFrequently: true };
+
+// Point a download link at a new zip, releasing the one it held before;
+// otherwise every crop run keeps its old zips in memory until the tab closes.
+function setDownload(link, blob) {
+    if (link.href.startsWith('blob:')) URL.revokeObjectURL(link.href);
+    link.href = URL.createObjectURL(blob);
+}
+
 cropForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
@@ -498,7 +510,7 @@ cropForm.addEventListener('submit', async (event) => {
             const pageCanvas = document.createElement('canvas');
             pageCanvas.width = viewport.width;
             pageCanvas.height = viewport.height;
-            const pageCtx = pageCanvas.getContext('2d');
+            const pageCtx = pageCanvas.getContext('2d', CPU_CANVAS);
             await pdfPage.render({ canvasContext: pageCtx, viewport }).promise;
 
             const scaleRatioX = viewport.width / width;
@@ -517,7 +529,7 @@ cropForm.addEventListener('submit', async (event) => {
                     const canvas = document.createElement('canvas');
                     canvas.width = cardWidth * dpiScale;
                     canvas.height = cardHeight * dpiScale;
-                    const ctx = canvas.getContext('2d');
+                    const ctx = canvas.getContext('2d', CPU_CANVAS);
                     ctx.drawImage(pageCanvas, scaledX, scaledY, scaledWidth, scaledHeight, 0, 0, canvas.width, canvas.height);
                     cells.push(canvas);
                 }
@@ -576,13 +588,14 @@ cropForm.addEventListener('submit', async (event) => {
         const pageCanvas = document.createElement('canvas');
         pageCanvas.width = viewport.width;
         pageCanvas.height = viewport.height;
-        const pageCtx = pageCanvas.getContext('2d');
+        const pageCtx = pageCanvas.getContext('2d', CPU_CANVAS);
 
         const renderContext = {
             canvasContext: pageCtx,
             viewport: viewport,
         };
         await pdfPage.render(renderContext).promise;
+        await new Promise((resolve) => setTimeout(resolve)); // let the page respond between pages
 
         for (let row = rows - 1; row >= 0; row--) {
             for (let col = 0; col < columns; col++) {
@@ -593,7 +606,7 @@ cropForm.addEventListener('submit', async (event) => {
                 const canvas = document.createElement('canvas');
                 canvas.width = cardWidth * dpiScale;
                 canvas.height = cardHeight * dpiScale;
-                const ctx = canvas.getContext('2d');
+                const ctx = canvas.getContext('2d', CPU_CANVAS);
 
                 // Calculate scaled coordinates based on pdf.js render scale
                 // Note: PDF coordinates have origin at bottom-left, canvas has origin at top-left
@@ -651,7 +664,7 @@ cropForm.addEventListener('submit', async (event) => {
                             backCanvas = document.createElement('canvas');
                             backCanvas.width = canvas.width;
                             backCanvas.height = canvas.height;
-                            const rotatedCtx = backCanvas.getContext('2d');
+                            const rotatedCtx = backCanvas.getContext('2d', CPU_CANVAS);
                             rotatedCtx.translate(canvas.width / 2, canvas.height / 2);
                             rotatedCtx.rotate(Math.PI);
                             rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
@@ -742,14 +755,12 @@ cropForm.addEventListener('submit', async (event) => {
         const frontBytes = await frontZip.generateAsync({ type: 'blob' });
         const backBytes = await backZip.generateAsync({ type: 'blob' });
 
-        const frontUrl = URL.createObjectURL(frontBytes);
         const frontLink = document.getElementById('downloadFrontLink');
-        frontLink.href = frontUrl;
+        setDownload(frontLink, frontBytes);
         frontLink.classList.add('show');
 
-        const backUrl = URL.createObjectURL(backBytes);
         const backLink = document.getElementById('downloadBackLink');
-        backLink.href = backUrl;
+        setDownload(backLink, backBytes);
         backLink.classList.add('show');
 
         pdfStatus.textContent = '✓ Done! Click the links to download your files.';
@@ -759,9 +770,8 @@ cropForm.addEventListener('submit', async (event) => {
     else {
         const outputBytes = await frontZip.generateAsync({ type: 'blob' });
 
-        const url = URL.createObjectURL(outputBytes);
         const link = document.getElementById('downloadLink');
-        link.href = url;
+        setDownload(link, outputBytes);
         link.classList.add('show');
 
         pdfStatus.textContent = '✓ Done! Click the link to download your file.';
