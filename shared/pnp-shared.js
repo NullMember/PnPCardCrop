@@ -735,7 +735,14 @@ ${content(([x, y]) => [x - m, y - m])}
         let saveTimer = null;
         function save() {
             clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => storageSet(key, collect('local')), 150);
+            saveTimer = setTimeout(flush, 150);
+        }
+        // A change made just before leaving is still saved.
+        function flush() {
+            if (saveTimer === null) return;
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            storageSet(key, collect('local'));
         }
 
         function init(tool, rootEl) {
@@ -746,6 +753,7 @@ ${content(([x, y]) => [x - m, y - m])}
             apply(storageGet(key, null));
             root.addEventListener('input', save);
             root.addEventListener('change', save);
+            window.addEventListener('pagehide', flush);
         }
 
         function reset() {
