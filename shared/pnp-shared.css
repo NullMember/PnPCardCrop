@@ -61,7 +61,26 @@
     gap: 6px;
 }
 
+.pnp-topbar .pnp-project-name {
+    width: 130px;
+    height: auto;
+    margin: 0;
+    padding: 4px 8px;
+    line-height: 1.3;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.pnp-topbar .pnp-project-name:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .pnp-topbar button {
+    white-space: nowrap;
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 0.78rem;

@@ -73,6 +73,28 @@
         return node;
     }
 
+    // ---------------------------------------------------------------- file names
+
+    // "cards/Ace.png" -> "Ace"
+    const baseName = (name) => String(name || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+    const safeFileName = (name) => String(name).replace(/[\\/:*?"<>|]/g, '_').trim();
+
+    // Base name for an output made from `sources` (files or file names): the
+    // source's own name when there is one, otherwise the project name,
+    // otherwise ''.
+    function outputBase(sources = []) {
+        const names = [...sources].map((s) => (typeof s === 'string' ? s : s && s.name)).filter(Boolean);
+        if (names.length === 1) return safeFileName(baseName(names[0]));
+        return safeFileName(project.name().replace(/\.pnp$/i, ''));
+    }
+
+    // outputName(files, 'bleed.zip', 'cards-with-bleed.zip') -> "Deck_bleed.zip",
+    // or the fallback when there is no base name.
+    function outputName(sources, suffix, fallback) {
+        const base = outputBase(sources);
+        return base ? `${base}_${suffix}` : (fallback || suffix);
+    }
+
     // Downloads are remembered as the tool's output (see recordFiles), except
     // project files: pass { record: false }.
     function downloadBlob(blob, filename, { record = true } = {}) {
@@ -829,7 +851,9 @@ ${content(([x, y]) => [x - m, y - m])}
             if (mine.length) await tx('readwrite', (s) => mine.forEach((set) => s.delete(set.id)));
         }
 
-        return { list, save, get, remove, removeFromPage, receive, kindOf };
+        const clear = () => tx('readwrite', (s) => s.clear());
+
+        return { list, save, get, remove, removeFromPage, clear, receive, kindOf };
     })();
 
     // ---------------------------------------------------------------- recorded files
@@ -1209,22 +1233,40 @@ ${content(([x, y]) => [x - m, y - m])}
     // ---------------------------------------------------------------- project
 
     // A .pnp project is a zip: manifest.json + files/<n>-<name>. The manifest
-    // holds the tool id, all settings (including data-persist="project" ones)
-    // and whatever extra state the tool registers.
+    // holds the tool id, the project name, all settings (including
+    // data-persist="project" ones) and whatever extra state the tool registers.
+    //
+    // Where the browser has the File System Access API (Chrome, Edge), Save
+    // writes back to the file the project was opened from or last saved to,
+    // and Save as asks for a new file. Elsewhere both download a copy.
     const project = (() => {
         const VERSION = 1;
+        const TYPES = [{ description: 'PnPTools project', accept: { 'application/zip': ['.pnp'] } }];
         let tool = null;
         let hooks = null;
+        let handle = null;     // FileSystemFileHandle saved to / opened from
+        let nameInput = null;  // the top bar's project name field
+
+        const canPick = () => typeof window.showSaveFilePicker === 'function';
+        const name = () => (nameInput ? nameInput.value.trim() : '');
+        function setName(value) {
+            if (nameInput) nameInput.value = value || '';
+        }
+        function defaultName() {
+            const stamp = new Date().toISOString().slice(0, 10);
+            return `${(hooks && hooks.fileName && hooks.fileName()) || tool}-${stamp}`;
+        }
+        const fileName = () => `${safeFileName(name().replace(/\.pnp$/i, '') || defaultName())}.pnp`;
 
         function register(h_) { hooks = h_; }
 
-        async function save() {
-            if (!hooks) return;
+        async function build() {
             const files = hooks.getFiles ? await hooks.getFiles() : [];
             const manifest = {
                 app: 'PnPTools',
                 version: VERSION,
                 tool,
+                name: name() || null,
                 saved: new Date().toISOString(),
                 settings: settings.collect('project'),
                 state: hooks.getState ? await hooks.getState() : null,
@@ -1232,19 +1274,43 @@ ${content(([x, y]) => [x - m, y - m])}
             };
             const entries = [];
             files.forEach((f, i) => {
-                const path = `files/${String(i + 1).padStart(4, '0')}-${f.name.replace(/[\\/:*?"<>|]/g, '_')}`;
+                const path = `files/${String(i + 1).padStart(4, '0')}-${safeFileName(f.name)}`;
                 manifest.files.push({ path, name: f.name, type: f.blob.type, role: f.role || null });
                 entries.push({ name: path, data: f.blob });
             });
             entries.unshift({ name: 'manifest.json', data: JSON.stringify(manifest, null, 2) });
-            const blob = await zip.create(entries);
-            const stamp = new Date().toISOString().slice(0, 10);
-            downloadBlob(blob, `${(hooks.fileName && hooks.fileName()) || tool}-${stamp}.pnp`, { record: false });
-            hooks.markSaved && hooks.markSaved();
-            toast('Project saved.', 'success');
+            return zip.create(entries);
         }
 
-        async function load(file) {
+        // as: always ask where to save. Renaming the project also asks, so
+        // Save never overwrites the file under its old name.
+        async function save({ as = false } = {}) {
+            if (!hooks) return;
+            if (!canPick()) {
+                downloadBlob(await build(), fileName(), { record: false });
+            } else {
+                let target = handle;
+                if (as || !target || target.name !== fileName()) {
+                    // Ask first: the picker needs the click's user activation.
+                    try {
+                        target = await window.showSaveFilePicker({ suggestedName: fileName(), types: TYPES });
+                    } catch (err) {
+                        if (err.name === 'AbortError') return;
+                        throw err;
+                    }
+                }
+                const blob = await build();
+                const writable = await target.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                handle = target;
+                setName(baseName(target.name));
+            }
+            hooks.markSaved && hooks.markSaved();
+            toast(canPick() ? `Saved ${handle.name}.` : 'Project saved.', 'success');
+        }
+
+        async function load(file, fileHandle = null) {
             const entries = await zip.read(file);
             const raw = entries.get('manifest.json');
             if (!raw) throw new Error('This is not a PnPTools project file.');
@@ -1262,47 +1328,89 @@ ${content(([x, y]) => [x - m, y - m])}
             settings.apply(manifest.settings);
             if (hooks.setFiles) await hooks.setFiles(files, manifest);
             if (hooks.setState) await hooks.setState(manifest.state, manifest);
+            handle = fileHandle;
+            // The file's own name wins, so Save goes back to that file.
+            setName(fileHandle || !manifest.name ? baseName(file.name) : manifest.name);
             toast('Project loaded.', 'success');
         }
 
-        function openPicker() {
-            const input = h('input', { type: 'file', accept: '.pnp,application/zip' });
-            input.addEventListener('change', async () => {
-                const file = input.files[0];
-                if (!file) return;
+        async function openPicker() {
+            const tryLoad = (file, fileHandle) => load(file, fileHandle).catch((err) => {
+                console.error(err);
+                toast(err.message, 'error');
+            });
+            if (typeof window.showOpenFilePicker === 'function') {
+                let picked;
                 try {
-                    await load(file);
+                    [picked] = await window.showOpenFilePicker({ types: TYPES });
                 } catch (err) {
-                    console.error(err);
-                    toast(err.message, 'error');
+                    if (err.name !== 'AbortError') toast(err.message, 'error');
+                    return;
                 }
+                await tryLoad(await picked.getFile(), picked);
+                return;
+            }
+            const input = h('input', { type: 'file', accept: '.pnp,application/zip' });
+            input.addEventListener('change', () => {
+                if (input.files[0]) tryLoad(input.files[0], null);
             });
             input.click();
         }
 
         // Start over: the page reloads without its loaded files and work;
-        // settings stay (Reset restores those).
-        // This page's entries in Inputs & outputs go too.
+        // settings stay (Reset restores those). Inputs & outputs is emptied.
         async function newProject() {
             const unsaved = guards.some((fn) => { try { return fn(); } catch (err) { return false; } });
             if (unsaved && !confirm('Discard the current work and start a new project?')) return;
-            try { await handoff.removeFromPage(location.pathname); } catch (err) { /* IndexedDB unavailable */ }
+            try { await handoff.clear(); } catch (err) { /* IndexedDB unavailable */ }
             guardBypass = true;
             location.href = location.pathname;
         }
 
+        const report = (err) => { console.error(err); toast(`Could not save project: ${err.message}`, 'error'); };
+
         return {
             register,
             newProject,
-            save: () => save().catch((err) => { console.error(err); toast(`Could not save project: ${err.message}`, 'error'); }),
+            save: () => save().catch(report),
+            saveAs: () => save({ as: true }).catch(report),
             load,
             openPicker,
+            name,
+            setName,
+            _nameInput: (el) => { nameInput = el; },
             _setTool: (t) => { tool = t; },
             get registered() { return !!hooks; },
         };
     })();
 
     // ---------------------------------------------------------------- top bar
+
+    // The project's name: the saved file's name, and the base name of
+    // outputs made from several files.
+    function projectNameField() {
+        const input = h('input', {
+            type: 'text',
+            class: 'pnp-project-name',
+            placeholder: 'Untitled project',
+            'aria-label': 'Project name',
+            title: 'Project name: Save names the .pnp file after it, and outputs made from several files use it',
+            spellcheck: 'false',
+            'data-persist': 'false',
+        });
+        project._nameInput(input);
+        return input;
+    }
+
+    // Ctrl/⌘ S saves the project, with Shift it saves to a new file.
+    function saveShortcut() {
+        document.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 's') return;
+            e.preventDefault();
+            if (e.shiftKey) project.saveAs();
+            else project.save();
+        });
+    }
 
     function topBar(toolId, { projectButtons }) {
         const header = document.querySelector('header');
@@ -1327,9 +1435,11 @@ ${content(([x, y]) => [x - m, y - m])}
                         onclick: () => units.set(u),
                     }, u))),
                 projectButtons ? [
-                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.newProject(), title: 'Start a new, empty project: clears the loaded files and this tool’s Inputs & outputs (settings are kept)' }, 'New'),
+                    projectNameField(),
+                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.newProject(), title: 'Start a new, empty project: clears the loaded files and Inputs & outputs (settings are kept)' }, 'New'),
                     h('button', { type: 'button', class: 'pnp-action', onclick: () => project.openPicker(), title: 'Open a saved .pnp project' }, 'Open'),
-                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.save(), title: 'Save settings and loaded files as a .pnp project' }, 'Save'),
+                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.save(), title: 'Save settings and loaded files as a .pnp project, named after the project (Ctrl/⌘ S)' }, 'Save'),
+                    h('button', { type: 'button', class: 'pnp-action', onclick: () => project.saveAs(), title: 'Save the project to a new file (Ctrl/⌘ Shift S)' }, 'Save as'),
                 ] : null,
                 h('button', {
                     type: 'button',
@@ -1385,7 +1495,10 @@ ${content(([x, y]) => [x - m, y - m])}
         units.scan();
         units.relabel();
         topBar(toolId, { projectButtons: !!opts.project });
-        if (opts.project) project.register(opts.project);
+        if (opts.project) {
+            project.register(opts.project);
+            saveShortcut();
+        }
         const rootEl = opts.settingsRoot === undefined ? document.querySelector('.sidebar') : opts.settingsRoot;
         settings.init(opts.settingsKey || toolId, rootEl);
         if (opts.hasUnsavedWork) guard(opts.hasUnsavedWork);
@@ -1422,6 +1535,10 @@ ${content(([x, y]) => [x - m, y - m])}
         toast,
         zip,
         downloadBlob,
+        baseName,
+        safeFileName,
+        outputBase,
+        outputName,
         readImageDpi,
         setPngDpi,
         canvasToBlob: (canvas, type = 'image/png', quality) => new Promise((resolve, reject) => {
