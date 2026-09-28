@@ -369,8 +369,13 @@ previewCanvas.addEventListener('pointercancel', () => {
     isDragging = false;
 });
 
+// Cropped cards are named after their source ("Game_front_0001.png"): the
+// PDF or image when there is one, otherwise the project. Set per crop.
+let cropPrefix = '';
+
 // Add a cropped card to its zip and remember it for "Send to"
 function recordCard(zip, list, name, blob) {
+    name = cropPrefix + name;
     zip.file(name, blob);
     list.push({ name, blob });
 }
@@ -433,9 +438,10 @@ const CPU_CANVAS = { willReadFrequently: true };
 
 // Point a download link at a new zip, releasing the one it held before;
 // otherwise every crop run keeps its old zips in memory until the tab closes.
-function setDownload(link, blob) {
+function setDownload(link, blob, name) {
     if (link.href.startsWith('blob:')) URL.revokeObjectURL(link.href);
     link.href = URL.createObjectURL(blob);
+    link.download = cropPrefix + name;
 }
 
 cropForm.addEventListener('submit', async (event) => {
@@ -475,6 +481,8 @@ cropForm.addEventListener('submit', async (event) => {
     const frontZip = new JSZip();
     const backZip = new JSZip();
     lastCrop = { front: [], back: [] };
+    const base = PnP.outputBase(sourceFiles);
+    cropPrefix = base ? `${base}_` : '';
     sendMenu.setEnabled(false);
 
     const endPage = parseInt(document.getElementById('endPage').value, 10) || pdfDoc.getPageCount();
@@ -756,11 +764,11 @@ cropForm.addEventListener('submit', async (event) => {
         const backBytes = await backZip.generateAsync({ type: 'blob' });
 
         const frontLink = document.getElementById('downloadFrontLink');
-        setDownload(frontLink, frontBytes);
+        setDownload(frontLink, frontBytes, 'front_cards.zip');
         frontLink.classList.add('show');
 
         const backLink = document.getElementById('downloadBackLink');
-        setDownload(backLink, backBytes);
+        setDownload(backLink, backBytes, 'back_cards.zip');
         backLink.classList.add('show');
 
         pdfStatus.textContent = '✓ Done! Click the links to download your files.';
@@ -771,7 +779,7 @@ cropForm.addEventListener('submit', async (event) => {
         const outputBytes = await frontZip.generateAsync({ type: 'blob' });
 
         const link = document.getElementById('downloadLink');
-        setDownload(link, outputBytes);
+        setDownload(link, outputBytes, 'cards.zip');
         link.classList.add('show');
 
         pdfStatus.textContent = '✓ Done! Click the link to download your file.';
