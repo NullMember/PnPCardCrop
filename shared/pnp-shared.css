@@ -146,6 +146,19 @@
         order: 3;
         flex-basis: 100%;
     }
+
+    /* The actions wrap onto as many rows as they need; the project name
+       takes what's left of its row. */
+    .pnp-actions {
+        flex-wrap: wrap;
+        flex-basis: 100%;
+    }
+
+    .pnp-topbar .pnp-project-name {
+        flex: 1 1 120px;
+        width: auto;
+        min-width: 0;
+    }
 }
 
 /* ---- Unit proxy inputs --------------------------------------------------- */
@@ -328,6 +341,13 @@
 
 .pnp-swap-row {
     align-items: flex-end;
+}
+
+/* Narrow screens stack .row fields; width ⇄ height stays on one line. */
+@media (max-width: 1024px) {
+    .row.pnp-swap-row {
+        flex-direction: row;
+    }
 }
 
 .row > .pnp-swap {
