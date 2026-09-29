@@ -844,6 +844,9 @@ ${content(([x, y]) => [x - m, y - m])}
         const DB = 'pnptools';
         const STORE = 'handoff';
         const MAX_SETS = { output: 12, input: 8 };
+        // Stored sets together stay under this; the oldest go first.
+        const MAX_BYTES = 500 * 1024 * 1024;
+        const sizeOf = (set) => set.bytes ?? (set.items || []).reduce((n, it) => n + ((it.blob && it.blob.size) || 0), 0);
         const kindOf = (set) => set.kind || 'output';
         const signature = (kind, from, items) => JSON.stringify([kind, from, items.map((it) => [it.name, it.blob && it.blob.size])]);
 
@@ -877,8 +880,19 @@ ${content(([x, y]) => [x - m, y - m])}
             const same = (await list()).find((set) => set.sig === sig);
             const id = same ? same.id : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             // page: which tool page recorded it, so New there can clear its own sets.
-            await tx('readwrite', (s) => s.put({ id, name, from, kind, sig, page: location.pathname, created: Date.now(), items }));
-            const stale = (await list()).filter((set) => kindOf(set) === kind).slice(MAX_SETS[kind] || 12);
+            const bytes = items.reduce((n, it) => n + ((it.blob && it.blob.size) || 0), 0);
+            await tx('readwrite', (s) => s.put({ id, name, from, kind, sig, page: location.pathname, created: Date.now(), bytes, items }));
+            const all = await list();
+            const stale = all.filter((set) => kindOf(set) === kind).slice(MAX_SETS[kind] || 12);
+            // Over the size limit: drop the oldest sets, never the one just saved
+            // (a tool may be about to open it).
+            let total = all.filter((set) => !stale.includes(set)).reduce((n, set) => n + sizeOf(set), 0);
+            for (const set of all.slice().reverse()) {
+                if (total <= MAX_BYTES) break;
+                if (set.id === id || stale.includes(set)) continue;
+                stale.push(set);
+                total -= sizeOf(set);
+            }
             if (stale.length) await tx('readwrite', (s) => stale.forEach((set) => s.delete(set.id)));
             return id;
         }
@@ -915,7 +929,7 @@ ${content(([x, y]) => [x - m, y - m])}
 
         const clear = () => tx('readwrite', (s) => s.clear());
 
-        return { list, save, get, remove, removeFromPage, clear, receive, kindOf };
+        return { list, save, get, remove, removeFromPage, clear, receive, kindOf, sizeOf, MAX_BYTES };
     })();
 
     // ---------------------------------------------------------------- recorded files
@@ -1024,7 +1038,7 @@ ${content(([x, y]) => [x - m, y - m])}
     // filter(item): list only sets with a matching file. browse(): adds a
     // first row that opens the file chooser instead.
     async function renderOutputList(pop, onPick, opts = {}) {
-        const { filter, browse } = opts;
+        const { filter, browse, footer } = opts;
         pop.innerHTML = '';
         let sets = [];
         try { sets = await handoff.list(); } catch (err) { /* IndexedDB unavailable */ }
@@ -1045,6 +1059,21 @@ ${content(([x, y]) => [x - m, y - m])}
             pop.append(h('div', { class: 'pnp-popover-heading' }, title));
             group.forEach((set) => appendSetRow(pop, set, onPick, opts));
         });
+        // The viewer shows the space used and can empty the list.
+        if (footer && sets.length) {
+            const used = sets.reduce((n, set) => n + handoff.sizeOf(set), 0);
+            pop.append(h('div', { class: 'pnp-popover-footer' },
+                h('span', {}, `${formatBytes(used)} of ${formatBytes(handoff.MAX_BYTES)} used; the oldest go first`),
+                h('button', {
+                    type: 'button',
+                    class: 'pnp-popover-clear',
+                    onclick: async (ev) => {
+                        ev.stopPropagation();
+                        await handoff.clear();
+                        renderOutputList(pop, onPick, opts);
+                    },
+                }, 'Clear all')));
+        }
     }
 
     function appendSetRow(pop, set, onPick, opts) {
@@ -1055,7 +1084,7 @@ ${content(([x, y]) => [x - m, y - m])}
                 onclick: () => { pop.hidden = true; onPick(set); },
             },
             h('strong', {}, describeSet(set)),
-            h('span', {}, ` ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from} · ${timeAgo(set.created)}`)),
+            h('span', {}, ` ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from} · ${formatBytes(handoff.sizeOf(set))} · ${timeAgo(set.created)}`)),
             h('button', {
                 type: 'button',
                 class: 'pnp-popover-remove',
@@ -1072,7 +1101,7 @@ ${content(([x, y]) => [x - m, y - m])}
     // A button that toggles a popover listing the stored tool outputs.
     // floating: the popover is placed on the page under the button, so a
     // scrolling or clipped container (a sidebar list) can't cut it off.
-    function outputMenu(container, { label, title, wrapClass, buttonClass, onPick, filter, browse, floating = false }) {
+    function outputMenu(container, { label, title, wrapClass, buttonClass, onPick, filter, browse, footer = false, floating = false }) {
         const wrap = h('div', { class: wrapClass });
         const pop = h('div', { class: `pnp-popover${floating ? ' pnp-popover-floating' : ''}`, hidden: true });
         const place = () => {
@@ -1089,7 +1118,7 @@ ${content(([x, y]) => [x - m, y - m])}
             onclick: async (e) => {
                 e.stopPropagation();
                 if (!pop.hidden) { pop.hidden = true; return; }
-                await renderOutputList(pop, onPick, { filter, browse });
+                await renderOutputList(pop, onPick, { filter, browse, footer });
                 if (floating) place();
                 pop.hidden = false;
             },
@@ -1141,6 +1170,7 @@ ${content(([x, y]) => [x - m, y - m])}
             title: 'Preview files loaded into and exported from PnPTools tools',
             wrapClass: 'pnp-outputs',
             buttonClass: 'pnp-outputs-btn',
+            footer: true,
             onPick: previewOutput,
         });
     }

@@ -298,6 +298,23 @@
     color: var(--text-dim);
 }
 
+.pnp-popover-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 8px 10px 4px;
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+}
+
+.pnp-popover-footer .pnp-popover-clear {
+    flex-shrink: 0;
+    padding: 3px 8px;
+}
+
 .pnp-popover-heading {
     padding: 8px 10px 4px;
     font-size: 0.7rem;
