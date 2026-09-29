@@ -295,6 +295,11 @@ header .subtitle {
     flex: 1;
 }
 
+/* .row sets display, which would override the hidden attribute */
+.row[hidden] {
+    display: none;
+}
+
 input[type="file"],
 input[type="number"],
 input[type="text"],
