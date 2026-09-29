@@ -75,6 +75,9 @@
 
     // ---------------------------------------------------------------- file names
 
+    // A tool's name as it reads in a sentence: "Bleed tool".
+    const toolLabel = (name) => `${name} tool`;
+
     // "cards/Ace.png" -> "Ace"
     const baseName = (name) => String(name || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
     const safeFileName = (name) => String(name).replace(/[\\/:*?"<>|]/g, '_').trim();
@@ -962,7 +965,7 @@ ${content(([x, y]) => [x - m, y - m])}
                     return;
                 }
                 await onItems(set.items, set);
-                toast(`Imported ${describeSet(set)} from ${set.from}.`, 'success');
+                toast(`Imported ${describeSet(set)} from ${toolLabel(set.from)}.`, 'success');
             } catch (err) {
                 console.error(err);
                 toast(`Import failed: ${err.message}`, 'error');
@@ -1042,7 +1045,7 @@ ${content(([x, y]) => [x - m, y - m])}
             const btn = h('button', {
                 type: 'button',
                 class: 'btn-secondary btn-small',
-                title: `Open ${tool.name} in a new tab with these images`,
+                title: `Open ${toolLabel(tool.name)} in a new tab with these images`,
                 onclick: async () => {
                     // Open the tab synchronously so popup blockers allow it.
                     const win = window.open('', '_blank');
@@ -1131,7 +1134,7 @@ ${content(([x, y]) => [x - m, y - m])}
                 onclick: () => { pop.hidden = true; onPick(set); },
             },
             h('strong', {}, describeSet(set)),
-            h('span', {}, ` ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from} · ${formatBytes(handoff.sizeOf(set))} · ${timeAgo(set.created)}`)),
+            h('span', {}, ` ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${toolLabel(set.from)} · ${formatBytes(handoff.sizeOf(set))} · ${timeAgo(set.created)}`)),
             h('button', {
                 type: 'button',
                 class: 'pnp-popover-remove',
@@ -1202,7 +1205,7 @@ ${content(([x, y]) => [x - m, y - m])}
                 try {
                     const files = itemsToFiles(set.items.filter(filter));
                     await onFiles(files, set);
-                    toast(`Loaded ${files.length} file(s) from ${set.from}.`, 'success');
+                    toast(`Loaded ${files.length} file(s) from ${toolLabel(set.from)}.`, 'success');
                 } catch (err) {
                     toast(`Could not load the files: ${err.message}`, 'error');
                 }
@@ -1263,10 +1266,10 @@ ${content(([x, y]) => [x - m, y - m])}
         }, 'Download');
         const close = h('button', { type: 'button', class: 'pnp-viewer-btn', 'aria-label': 'Close', onclick: () => done() }, '✕');
 
-        const dialog = h('div', { class: 'pnp-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Output from ${set.from}` },
+        const dialog = h('div', { class: 'pnp-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Output from ${toolLabel(set.from)}` },
             h('div', { class: 'pnp-viewer-head' },
                 h('div', { class: 'pnp-viewer-title' },
-                    h('strong', {}, `${describeSet({ items })} ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${set.from}`),
+                    h('strong', {}, `${describeSet({ items })} ${handoff.kindOf(set) === 'input' ? 'loaded in' : 'from'} ${toolLabel(set.from)}`),
                     h('span', {}, ` · ${timeAgo(set.created)}`)),
                 counter, download, close),
             h('div', { class: 'pnp-viewer-body' },
@@ -1464,7 +1467,7 @@ ${content(([x, y]) => [x - m, y - m])}
             if (manifest.app !== 'PnPTools') throw new Error('This is not a PnPTools project file.');
             if (manifest.tool !== tool) {
                 const other = TOOLS.find((t) => t.id === manifest.tool);
-                throw new Error(`This project belongs to ${other ? other.name : manifest.tool}. Open it there.`);
+                throw new Error(`This project belongs to ${other ? toolLabel(other.name) : manifest.tool}. Open it there.`);
             }
             const files = (manifest.files || []).map((f) => {
                 const file = new File([entries.get(f.path)], f.name, { type: f.type || '' });
