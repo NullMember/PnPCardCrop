@@ -370,14 +370,23 @@ previewCanvas.addEventListener('pointercancel', () => {
 });
 
 // Cropped cards are named after their source ("Game_front_0001.png"): the
-// PDF or image when there is one, otherwise the project. Set per crop.
+// PDF or image when there is one, otherwise the project. Set per crop, with
+// the DPI the cards are rendered at.
 let cropPrefix = '';
+let cropDpi = 0;
 
-// Add a cropped card to its zip and remember it for "Send to"
+// Add a cropped card to its zip and remember it for "Send to". The card is
+// stamped with its DPI, so Layout and the other tools print it at the right
+// size; the stamping finishes in the background (see settleCards).
 function recordCard(zip, list, name, blob) {
     name = cropPrefix + name;
-    zip.file(name, blob);
-    list.push({ name, blob });
+    const stamped = PnP.setImageDpi(blob, cropDpi);
+    zip.file(name, stamped);
+    list.push({ name, blob: stamped });
+}
+
+async function settleCards(list) {
+    for (const card of list) card.blob = await card.blob;
 }
 
 function currentLayout() {
@@ -483,6 +492,7 @@ cropForm.addEventListener('submit', async (event) => {
     lastCrop = { front: [], back: [] };
     const base = PnP.outputBase(sourceFiles);
     cropPrefix = base ? `${base}_` : '';
+    cropDpi = dpi;
     sendMenu.setEnabled(false);
 
     const endPage = parseInt(document.getElementById('endPage').value, 10) || pdfDoc.getPageCount();
@@ -752,6 +762,8 @@ cropForm.addEventListener('submit', async (event) => {
 
     // Wait for all blobs to be added to zip
     await Promise.all(pageRenderPromises);
+    await settleCards(lastCrop.front);
+    await settleCards(lastCrop.back);
     const byName = (a, b) => a.name.localeCompare(b.name);
     lastCrop.front.sort(byName);
     lastCrop.back.sort(byName);
