@@ -18,7 +18,7 @@
   <div class="container">
     <header>
       <h1>Freeform Crop</h1>
-      <p class="subtitle">Cut any shape out of a scan or PDF page — tokens, tiles, odd-shaped cards — as PNGs with transparent backgrounds.</p>
+      <p class="subtitle">Cut tokens, tiles and odd-shaped cards out of scans, with transparent backgrounds.</p>
       <nav class="tool-nav">
         <a class="nav-link" href="index.html">&larr; Grid crop</a>
         <a class="nav-link current" href="freeform.html">Freeform crop</a>
@@ -28,7 +28,7 @@
     <div class="content with-gallery">
       <div class="sidebar">
         <div class="panel">
-          <div class="panel-title">Scans <span class="help" tabindex="0" data-tip="Add scanned images or PDFs. Each image and each PDF page is a separate page here; crop regions are kept per page.">?</span></div>
+          <div class="panel-title">Scans <span class="help" tabindex="0" data-tip="Images or PDFs. Each image and PDF page is a separate page.">?</span></div>
           <div class="dropzone" id="dropZone">
             <div class="dz-title">Drag &amp; drop scans or PDFs</div>
             <div>or click to browse</div>
@@ -48,13 +48,13 @@
         </div>
 
         <div class="panel">
-          <div class="panel-title">Find Pieces <span class="help" tabindex="0" data-tip="“Detect all objects” outlines every separate object on the page that stands out from the scan background. Or use the Trace tool (T) to click objects one by one, or draw regions with the rectangle, ellipse, pen and freehand tools.">?</span></div>
+          <div class="panel-title">Find Pieces <span class="help" tabindex="0" data-tip="“Detect all objects” outlines everything that stands out from the background. Or click objects with the Trace tool (T), or draw regions.">?</span></div>
           <button type="button" class="btn-primary" id="detectBtn">Detect all objects</button>
           <div class="control-group">
             <label for="minArea">Ignore specks smaller than (mm²)</label>
             <input type="number" id="minArea" value="40" min="1" step="5">
           </div>
-          <div class="input-hint">Uses the trace tolerance and smoothing below. Rotate a rectangle region to straighten a tilted card — it's exported upright.</div>
+          <div class="input-hint">Rotate a rectangle to straighten a tilted card.</div>
         </div>
 
         <div class="panel">

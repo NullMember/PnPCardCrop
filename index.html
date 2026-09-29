@@ -16,7 +16,7 @@
   <div class="container">
     <header>
       <h1>PnP Card Cropper</h1>
-      <p class="subtitle">Crop cards out of a print-and-play PDF sheet and export them as ready-to-use image ZIPs.</p>
+      <p class="subtitle">Crop cards out of print-and-play PDF sheets.</p>
       <nav class="tool-nav">
         <a class="nav-link current" href="index.html">Grid crop</a>
         <a class="nav-link" href="freeform.html">Freeform crop &rarr;</a>
@@ -28,7 +28,7 @@
         <form id="cropForm">
           <!-- File Upload Section -->
           <div class="panel">
-            <div class="panel-title">Card Sheets <span class="help" tabindex="0" data-tip="A PDF, or one or more images (PNG, JPEG, WebP, GIF, BMP, AVIF… anything your browser can open). Each image is one page, taken in name order, so a front image followed by a back image works for the duplex layouts.">?</span></div>
+            <div class="panel-title">Card Sheets <span class="help" tabindex="0" data-tip="A PDF, or images (one page each, in name order).">?</span></div>
             <div class="dropzone" id="pdfDropZone">
               <div class="dz-title">Drag &amp; drop a PDF or sheet images</div>
               <div>or click to browse</div>
@@ -43,7 +43,7 @@
 
           <!-- Page Selection Section -->
           <div class="panel">
-            <div class="panel-title">Pages <span class="help" tabindex="0" data-tip="Which PDF pages to crop, counting every page including back pages. Leave Last page empty to go to the end. For the duplex layouts, start on a front page.">?</span></div>
+            <div class="panel-title">Pages <span class="help" tabindex="0" data-tip="Count every page, backs included. For duplex layouts, start on a front page.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="startingPage">First page</label>
@@ -58,7 +58,7 @@
 
           <!-- DPI Selection Section -->
           <div class="panel">
-            <div class="panel-title">Export DPI <span class="help" tabindex="0" data-tip="Resolution the cards are cropped at. PDF pages are rendered at this DPI, and images are resampled to it. 300 is typical for printing; higher is sharper but makes bigger files.">?</span></div>
+            <div class="panel-title">Export DPI <span class="help" tabindex="0" data-tip="300 is typical for printing. Higher is sharper, with bigger files.">?</span></div>
             <div class="control-group">
               <label for="dpi">Export DPI</label>
               <input type="number" id="dpi" value="288" min="72" step="72" />
@@ -67,7 +67,7 @@
 
           <!-- Layout Selection Section -->
           <div class="panel">
-            <div class="panel-title">Page Layout <span class="help" tabindex="0" data-tip="How front/back cards are matched from your PDF's pages: No Back Face — fronts only. Back in Last Page — fronts, then one final page of backs matched by grid position. Duplex — alternating front/back pages from double-sided printing (long/short = the printer's flip edge). Fold — a single page split into front/back halves for folding.">?</span></div>
+            <div class="panel-title">Page Layout <span class="help" tabindex="0" data-tip="Where the backs are: none, on the last page, on alternate pages (duplex), or on the same page (fold).">?</span></div>
             <div class="radio-group">
               <label for="page_no_back">
                 <input type="radio" id="page_no_back" name="page_layout" value="no_back">
@@ -98,7 +98,7 @@
 
           <!-- Page Size Section -->
           <div class="panel">
-            <div class="panel-title">Page Size <span class="help" tabindex="0" data-tip="The size of each PDF page you're cropping cards out of — not the output card size.">?</span></div>
+            <div class="panel-title">Page Size <span class="help" tabindex="0" data-tip="The size of the PDF page, not the card.">?</span></div>
             <div class="control-group">
               <label for="pageSizePreset">Preset</label>
               <select id="pageSizePreset"></select>
@@ -136,7 +136,7 @@
 
           <!-- Grid Configuration Section -->
           <div class="panel">
-            <div class="panel-title">Grid Configuration <span class="help" tabindex="0" data-tip="How many card positions go across and down each page. For the Fold layouts, count fronts and backs together: Fold Vertical alternates front and back columns, Fold Horizontal alternates rows.">?</span></div>
+            <div class="panel-title">Grid Configuration <span class="help" tabindex="0" data-tip="Cards across and down each page. For fold layouts, count fronts and backs together.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="rows">Rows</label>
@@ -151,7 +151,7 @@
 
           <!-- Card Spacing Section -->
           <div class="panel">
-            <div class="panel-title">Card Spacing &amp; Position <span class="help" tabindex="0" data-tip="The grid starts centred on the page. Offsets move it (right / down); on duplex back pages the offset is mirrored automatically. You can also switch the preview to “Move grid” and drag it.">?</span></div>
+            <div class="panel-title">Card Spacing &amp; Position <span class="help" tabindex="0" data-tip="Offsets move the grid right and down. You can also drag it in the preview with “Move grid”.">?</span></div>
             <div class="row">
               <div class="control-group">
                 <label for="rowSpacing">Row Spacing (mm)</label>
@@ -193,7 +193,7 @@
         </form>
 
         <div class="panel">
-          <div class="panel-title">Use the Cropped Cards <span class="help" tabindex="0" data-tip="Opens another PnPTools tool in a new tab with these cards (fronts and backs keep their roles). The cropped cards are also listed under Inputs &amp; outputs, so any tool can pick them later.">?</span></div>
+          <div class="panel-title">Use the Cropped Cards <span class="help" tabindex="0" data-tip="Opens another tool with these cards. They're also kept under Inputs &amp; outputs.">?</span></div>
           <div id="sendSlot"></div>
         </div>
       </div>
@@ -223,7 +223,7 @@
             <div class="preview-canvas-container">
               <canvas id="zoomCanvas" width="400" height="400"></canvas>
             </div>
-            <div class="input-hint">With “Move detail box”, click or drag on the preview to choose what to magnify — the detail view stays put while you tweak the grid.</div>
+            <div class="input-hint">With “Move detail box”, click the preview to choose what to magnify.</div>
           </div>
         </div>
 
