@@ -322,7 +322,45 @@
         chunk[16] = 1; // metre
         view.setUint32(17, zip.crc32(chunk.subarray(4, 17)));
         const ihdrEnd = 8 + 25;
-        return new Blob([bytes.subarray(0, ihdrEnd), chunk, bytes.subarray(ihdrEnd)], { type: 'image/png' });
+        // Drop a pHYs that is already there, so there's only one.
+        const pv = new DataView(bytes.buffer);
+        const parts = [bytes.subarray(0, ihdrEnd), chunk];
+        let p = ihdrEnd;
+        while (p + 12 <= bytes.length) {
+            const len = pv.getUint32(p);
+            const type = String.fromCharCode(...bytes.subarray(p + 4, p + 8));
+            if (type !== 'pHYs') parts.push(bytes.subarray(p, p + 12 + len));
+            p += 12 + len;
+        }
+        return new Blob(parts, { type: 'image/png' });
+    }
+
+    // A PNG or JPEG blob with its DPI recorded; other blobs, or no DPI, come
+    // back unchanged. Tools stamp every image they output so the next tool
+    // (Layout, TuckBox…) and other apps print it at the right size.
+    async function setImageDpi(blob, dpi) {
+        if (!blob || !(dpi > 0)) return blob;
+        const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+        if (head[0] === 0x89 && head[1] === 0x50) return setPngDpi(blob, dpi);
+        if (head[0] !== 0xff || head[1] !== 0xd8) return blob;
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const view = new DataView(bytes.buffer);
+        const density = Math.min(65535, Math.round(dpi));
+        // An existing JFIF header (canvas JPEGs have one) gets dots-per-inch.
+        if (bytes[2] === 0xff && bytes[3] === 0xe0 && String.fromCharCode(...bytes.subarray(6, 11)) === 'JFIF\0') {
+            const out = bytes.slice();
+            const v = new DataView(out.buffer);
+            out[13] = 1;
+            v.setUint16(14, density);
+            v.setUint16(16, density);
+            return new Blob([out], { type: 'image/jpeg' });
+        }
+        const app0 = new Uint8Array(18);
+        const a = new DataView(app0.buffer);
+        app0.set([0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 1]);
+        a.setUint16(12, density);
+        a.setUint16(14, density);
+        return new Blob([bytes.subarray(0, 2), app0, bytes.subarray(2)], { type: 'image/jpeg' });
     }
 
     // ---------------------------------------------------------------- presets
@@ -1549,6 +1587,7 @@ ${content(([x, y]) => [x - m, y - m])}
         outputName,
         readImageDpi,
         setPngDpi,
+        setImageDpi,
         canvasToBlob: (canvas, type = 'image/png', quality) => new Promise((resolve, reject) => {
             canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image.'))), type, quality);
         }),
