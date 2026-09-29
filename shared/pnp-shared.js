@@ -805,14 +805,30 @@ ${content(([x, y]) => [x - m, y - m])}
 
     // ---------------------------------------------------------------- guard
 
+    // Work counts as unsaved when a tool's hasUnsavedWork() says so and the
+    // user has done something since the project was last saved or opened.
+    // Anything they do outside the top bar (typing, clicking, dropping)
+    // counts, which may warn after a harmless click, but never misses a change.
     const guards = [];
     function guard(hasUnsavedWork) {
         guards.push(hasUnsavedWork);
     }
     let guardBypass = false;
+    let touchedSinceSave = true;
+    const markClean = () => { touchedSinceSave = false; };
+    const OUTSIDE_WORK = '.pnp-topbar, .pnp-popover, .pnp-toasts, .pnp-viewer';
+    ['input', 'change', 'drop', 'click', 'keydown'].forEach((type) => document.addEventListener(type, (e) => {
+        if (!e.isTrusted || touchedSinceSave) return;
+        if (type === 'keydown' && (e.ctrlKey || e.metaKey || e.altKey || e.key.length > 1 && !/^(Delete|Backspace|Enter|Arrow)/.test(e.key))) return;
+        if (e.target instanceof Element && e.target.closest(OUTSIDE_WORK)) return;
+        touchedSinceSave = true;
+    }, true));
+    function hasUnsaved() {
+        return touchedSinceSave && guards.some((fn) => { try { return fn(); } catch (err) { return false; } });
+    }
     window.addEventListener('beforeunload', (e) => {
         if (guardBypass) return;
-        if (guards.some((fn) => { try { return fn(); } catch (err) { return false; } })) {
+        if (hasUnsaved()) {
             e.preventDefault();
             e.returnValue = '';
         }
@@ -1332,8 +1348,12 @@ ${content(([x, y]) => [x - m, y - m])}
         // Save never overwrites the file under its old name.
         async function save({ as = false } = {}) {
             if (!hooks) return;
+            // Clean from the moment the project is read: a change made while
+            // it is written still counts as unsaved.
+            const failed = (err) => { touchedSinceSave = true; throw err; };
             if (!canPick()) {
-                downloadBlob(await build(), fileName(), { record: false });
+                markClean();
+                downloadBlob(await build().catch(failed), fileName(), { record: false });
             } else {
                 let target = handle;
                 if (as || !target || target.name !== fileName()) {
@@ -1345,10 +1365,13 @@ ${content(([x, y]) => [x - m, y - m])}
                         throw err;
                     }
                 }
-                const blob = await build();
-                const writable = await target.createWritable();
-                await writable.write(blob);
-                await writable.close();
+                markClean();
+                await (async () => {
+                    const blob = await build();
+                    const writable = await target.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                })().catch(failed);
                 handle = target;
                 setName(baseName(target.name));
             }
@@ -1377,6 +1400,7 @@ ${content(([x, y]) => [x - m, y - m])}
             handle = fileHandle;
             // The file's own name wins, so Save goes back to that file.
             setName(fileHandle || !manifest.name ? baseName(file.name) : manifest.name);
+            markClean();
             toast('Project loaded.', 'success');
         }
 
@@ -1406,8 +1430,7 @@ ${content(([x, y]) => [x - m, y - m])}
         // Start over: the page reloads without its loaded files and work;
         // settings stay (Reset restores those). Inputs & outputs is emptied.
         async function newProject() {
-            const unsaved = guards.some((fn) => { try { return fn(); } catch (err) { return false; } });
-            if (unsaved && !confirm('Discard the current work and start a new project?')) return;
+            if (hasUnsaved() && !confirm('Discard the current work and start a new project?')) return;
             try { await handoff.clear(); } catch (err) { /* IndexedDB unavailable */ }
             guardBypass = true;
             location.href = location.pathname;
