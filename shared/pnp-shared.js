@@ -335,6 +335,53 @@
         return new Blob(parts, { type: 'image/png' });
     }
 
+    // Text notes in a PNG (tEXt chunks, placed after IHDR). Tools use them to
+    // pass facts about an image on, e.g. "PnPTools:bleed" = the bleed (mm) Bleed
+    // added, so Layout can find the card inside it.
+    async function setPngText(blob, key, value) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (bytes[0] !== 0x89 || bytes[1] !== 0x50) return blob;
+        const data = new TextEncoder().encode(`${key}\0${value}`);
+        const chunk = new Uint8Array(12 + data.length);
+        const view = new DataView(chunk.buffer);
+        view.setUint32(0, data.length);
+        chunk.set([0x74, 0x45, 0x58, 0x74], 4); // "tEXt"
+        chunk.set(data, 8);
+        view.setUint32(8 + data.length, zip.crc32(chunk.subarray(4, 8 + data.length)));
+        // Drop an older note with the same key.
+        const pv = new DataView(bytes.buffer);
+        const ihdrEnd = 8 + 25;
+        const parts = [bytes.subarray(0, ihdrEnd), chunk];
+        let p = ihdrEnd;
+        while (p + 12 <= bytes.length) {
+            const len = pv.getUint32(p);
+            const type = String.fromCharCode(...bytes.subarray(p + 4, p + 8));
+            const same = type === 'tEXt' && new TextDecoder().decode(bytes.subarray(p + 8, p + 8 + len)).split('\0')[0] === key;
+            if (!same) parts.push(bytes.subarray(p, p + 12 + len));
+            p += 12 + len;
+        }
+        return new Blob(parts, { type: 'image/png' });
+    }
+
+    // The value of a PNG text note, or null.
+    async function readPngText(file, key) {
+        const bytes = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+        if (bytes[0] !== 0x89 || bytes[1] !== 0x50) return null;
+        const view = new DataView(bytes.buffer);
+        let p = 8;
+        while (p + 12 <= bytes.length) {
+            const len = view.getUint32(p);
+            const type = String.fromCharCode(...bytes.subarray(p + 4, p + 8));
+            if (type === 'IDAT' || type === 'IEND') return null;
+            if (type === 'tEXt' && p + 8 + len <= bytes.length) {
+                const [k, ...v] = new TextDecoder().decode(bytes.subarray(p + 8, p + 8 + len)).split('\0');
+                if (k === key) return v.join('\0');
+            }
+            p += 12 + len;
+        }
+        return null;
+    }
+
     // A PNG or JPEG blob with its DPI recorded; other blobs, or no DPI, come
     // back unchanged. Tools stamp every image they output so the next tool
     // (Layout, TuckBox…) and other apps print it at the right size.
@@ -1641,6 +1688,8 @@ ${content(([x, y]) => [x - m, y - m])}
         readImageDpi,
         setPngDpi,
         setImageDpi,
+        setPngText,
+        readPngText,
         canvasToBlob: (canvas, type = 'image/png', quality) => new Promise((resolve, reject) => {
             canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image.'))), type, quality);
         }),
